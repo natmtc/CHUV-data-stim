@@ -159,7 +159,8 @@ def compare_lr_curves(csv_before, csv_after, metric="p2p", window_ms=20.0, offse
 
 def compare_per_muscle(csv_before, csv_after, metric="p2p", window_ms=20.0, offset_ms=0.0,
                        results_dir="results", ylim=None,
-                       labels=("before lidocaine", "with lidocaine"), colours=None, save=None):
+                       labels=("before lidocaine", "with lidocaine"), colours=None, hollow=None,
+                       save=None):
     """One panel per muscle, x = intensity. Gray = first condition, orange = second, blue = third.
     csv_before may be a list of files (then csv_after=None) for more than two conditions.
     Circle + solid = LEFT arm, triangle + dashed = RIGHT arm. At most 4 lines per panel.
@@ -172,6 +173,7 @@ def compare_per_muscle(csv_before, csv_after, metric="p2p", window_ms=20.0, offs
     from .burst import _conditions
 
     paths, labels, colours = _conditions(csv_before, csv_after, labels, colours)
+    hollow = list(hollow) if hollow else [False] * len(paths)         # e.g. [False, False, True, True]
     runs = []
     for path in paths:
         meta, t, sig = load_run(path)
@@ -201,10 +203,11 @@ def compare_per_muscle(csv_before, csv_after, metric="p2p", window_ms=20.0, offs
     axes = axes.ravel()
     for i, (b, chs) in enumerate(groups.items()):
         ax = axes[i]
-        for r, col in zip(runs, colours):
+        for r, col, hol in zip(runs, colours, hollow):
             for c in chs:
                 side = _base_side(c)[1]
-                ax.plot(r["amps"], r["values"][c], color=col, lw=2, ms=7, mew=0,
+                ax.plot(r["amps"], r["values"][c], color=col, lw=2, ms=7,
+                        mfc=("white" if hol else col), mec=col, mew=(1.6 if hol else 0),
                         **side_style[side])
         ax.set_title(b, fontweight="bold")
         ax.grid(True, alpha=0.25)
@@ -223,9 +226,10 @@ def compare_per_muscle(csv_before, csv_after, metric="p2p", window_ms=20.0, offs
             axes[k - ncol].set_xlabel("Stim amplitude (mA)")
 
     handles = []
-    for l, c in zip(labels, colours):
-        handles += [Line2D([], [], color=c, lw=2, marker="o", ms=7, mew=0, label=f"{l} - left"),
-                    Line2D([], [], color=c, lw=2, ls="--", marker="^", ms=7, mew=0, label=f"{l} - right")]
+    for l, c, hol in zip(labels, colours, hollow):
+        mk = dict(mfc=("white" if hol else c), mec=c, mew=(1.6 if hol else 0))
+        handles += [Line2D([], [], color=c, lw=2, marker="o", ms=7, label=f"{l} - left", **mk),
+                    Line2D([], [], color=c, lw=2, ls="--", marker="^", ms=7, label=f"{l} - right", **mk)]
     fig.legend(handles=handles, loc="upper center", ncol=min(len(handles), 4), fontsize=12,
                frameon=False, bbox_to_anchor=(0.5, 1.0))
     fig.tight_layout(rect=(0, 0, 1, 0.95))

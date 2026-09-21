@@ -608,7 +608,8 @@ def resolve_muscles(available, wanted):
 def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=8.0,
                          resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, normalize="none",
                          labels=("before lidocaine", "with lidocaine"), markers=True,
-                         title=None, muscles=None, ncol=3, xlim=None, colours=None, save=None):
+                         title=None, muscles=None, ncol=3, xlim=None, colours=None, hatches=None,
+                         linestyles=None, save=None):
     """Per muscle, for ONE intensity: top = the two EMG traces overlaid (gray = before,
     orange = with lidocaine) with the artifact / response windows; bottom = per-pulse
     peak-to-peak of those two traces, side by side.
@@ -626,6 +627,8 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
     from matplotlib.gridspec import GridSpecFromSubplotSpec
 
     paths, labels, colours = _conditions(csv_before, csv_after, labels, colours)
+    hatches = list(hatches) if hatches else [""] * len(paths)          # e.g. ["", "", "//", "//"]
+    linestyles = list(linestyles) if linestyles else ["-"] * len(paths)
     amp_pair = tuple(amp) if isinstance(amp, (tuple, list)) else (amp,) * len(paths)
     runs = []
     for path, a_sel in zip(paths, amp_pair):
@@ -677,10 +680,10 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
 
         # ---- top: the two traces at this intensity -------------------------
         lo, hi = np.inf, -np.inf
-        for r, col in zip(runs, colours):
+        for r, col, ls_ in zip(runs, colours, linestyles):
             t, y = r["t"], r["sig"][m][r["w"]]
             mask = (t >= xlim[0]) & (t <= xlim[1])
-            ax_t.plot(t[mask], y[mask], color=col, lw=1.1, alpha=0.95)
+            ax_t.plot(t[mask], y[mask], color=col, lw=1.1, alpha=0.95, ls=ls_)
             if markers:   # the exact max (v) and min (^) each bar below is made of
                 rr, ww = r["raw"], r["w"]
                 ax_t.plot(rr["tmax"][m][ww, :npul], rr["ymax"][m][ww, :npul], "v", ms=5,
@@ -717,7 +720,8 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
         # ---- bottom: per-pulse p2p of exactly those two traces --------------
         for j, (r, col) in enumerate(zip(runs, colours)):
             y = r["vals"][m][r["w"], :npul]
-            ax_b.bar(x + offs[j], y, width=bw * 0.95, color=col)
+            ax_b.bar(x + offs[j], y, width=bw * 0.95, color=col, hatch=hatches[j],
+                     edgecolor=("white" if hatches[j] else "none"), lw=0)
             if np.isfinite(y).any():
                 ax_b.axhline(np.nanmean(y), color=col, ls="--", lw=1.6, zorder=3)
         if normalize == "before_first":
@@ -741,8 +745,10 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
             tail = y[1:][np.isfinite(y[1:])]
             rest, rest_sd = (tail.mean(), tail.std()) if len(tail) else (np.nan, np.nan)
             # pulse 1 is a single value -> no error bar; the mean bar gets +- SD over pulses 2..N
-            ax_s.bar(0 + offs[j], y[0], width=bw * 0.95, color=col)
-            ax_s.bar(1 + offs[j], rest, width=bw * 0.95, color=col,
+            ax_s.bar(0 + offs[j], y[0], width=bw * 0.95, color=col, hatch=hatches[j],
+                     edgecolor=("white" if hatches[j] else "none"), lw=0)
+            ax_s.bar(1 + offs[j], rest, width=bw * 0.95, color=col, hatch=hatches[j],
+                     edgecolor=("white" if hatches[j] else "none"), lw=0,
                      yerr=(rest_sd if np.isfinite(rest_sd) else None),
                      error_kw=dict(ecolor="0.3", lw=1.2, capsize=3))
         if normalize == "before_first":
@@ -763,7 +769,8 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
                           transform=ax_b.transAxes, ha="right", va="top", color=col,
                           fontsize=9, fontweight="bold")
 
-    handles = [Patch(facecolor=c, label=f"{l} ({a} mA)") for l, a, c in zip(labels, amp_pair, colours)]
+    handles = [Patch(facecolor=c, hatch=h, edgecolor=("white" if h else "none"), label=f"{l} ({a} mA)")
+               for l, a, c, h in zip(labels, amp_pair, colours, hatches)]
     if single:                      # title + legend in their own band above the panels
         if title:
             fig.suptitle(title, fontsize=16, fontweight="bold", y=0.985)
@@ -879,7 +886,7 @@ def summary_heatmap(csv_before, csv_after, metric="rest_first", n_pulses=10,
 # ---------------------------------------------------------------------------
 def summary_curves(csv_before, csv_after, n_pulses=10, resp_start_ms=8.0, resp_end_ms=None,
                    guard_ms=1.0, min_snr=None, max_edge_frac=0.5, labels=("before lidocaine", "with lidocaine"),
-                   colours=None, save=None):
+                   colours=None, markers=None, save=None):
     """Per muscle, two rows, x = stimulation intensity (mA):
 
     top    - RECRUITMENT: pulse-1 peak-to-peak (solid line, filled circles) and the mean
@@ -896,6 +903,7 @@ def summary_curves(csv_before, csv_after, n_pulses=10, resp_start_ms=8.0, resp_e
     from matplotlib.lines import Line2D
 
     paths, labels, colours = _conditions(csv_before, csv_after, labels, colours)
+    markers = list(markers) if markers else ["o"] * len(paths)         # e.g. ["o", "o", "s", "s"]
     runs = []
     for path in paths:
         meta, t, sig = load_run(path)
@@ -936,16 +944,17 @@ def summary_curves(csv_before, csv_after, n_pulses=10, resp_start_ms=8.0, resp_e
             ax_t.tick_params(labelbottom=False)
             ax_r.set_xlabel("Stim amplitude (mA)")
             continue
-        for r, col in zip(runs, colours):
+        for r, col, mk in zip(runs, colours, markers):
             a = r["amps"]; ok = r["res"]["responding"][m]
             p1, rest = r["raw_tm"][m]["p1"], r["raw_tm"][m]["rest"]
+            mk_rest = {"o": "^", "s": "v", "D": "v"}.get(mk, "^")
             # top: recruitment. Filled where responding, hollow where not.
-            ax_t.plot(a[ok], p1[ok], "-o", color=col, lw=2, ms=7, mew=0)
-            ax_t.plot(a[ok], rest[ok], "--^", color=col, lw=1.6, ms=7, mew=0, alpha=0.9)
-            ax_t.plot(a[~ok], p1[~ok], "o", mfc="white", mec=col, ms=5, mew=1.2, alpha=0.7)
+            ax_t.plot(a[ok], p1[ok], "-", marker=mk, color=col, lw=2, ms=7, mew=0)
+            ax_t.plot(a[ok], rest[ok], "--", marker=mk_rest, color=col, lw=1.6, ms=7, mew=0, alpha=0.9)
+            ax_t.plot(a[~ok], p1[~ok], ls="", marker=mk, mfc="white", mec=col, ms=5, mew=1.2, alpha=0.7)
             # bottom: ratio, responding trains only
             ratio = r["tm"][m]["rest_first"]
-            ax_r.plot(a[ok], ratio[ok], "-o", color=col, lw=2, ms=7, mew=0)
+            ax_r.plot(a[ok], ratio[ok], "-", marker=mk, color=col, lw=2, ms=7, mew=0)
         ax_r.axhline(100, color="0.3", lw=1, ls=":")
         ax_t.set_title(pretty(m), fontweight="bold")
         for ax in (ax_t, ax_r):
@@ -962,9 +971,10 @@ def summary_curves(csv_before, csv_after, n_pulses=10, resp_start_ms=8.0, resp_e
         axes[k][0].axis("off"); axes[k][1].axis("off")
 
     handles = []
-    for l, c in zip(labels, colours):
-        handles += [Line2D([], [], color=c, lw=2, marker="o", ms=7, mew=0, label=f"{l} - pulse 1"),
-                    Line2D([], [], color=c, lw=1.6, ls="--", marker="^", ms=7, mew=0, label=f"{l} - rest (mean 2-{n_pulses})")]
+    for l, c, mk in zip(labels, colours, markers):
+        mk_rest = {"o": "^", "s": "v", "D": "v"}.get(mk, "^")
+        handles += [Line2D([], [], color=c, lw=2, marker=mk, ms=7, mew=0, label=f"{l} - pulse 1"),
+                    Line2D([], [], color=c, lw=1.6, ls="--", marker=mk_rest, ms=7, mew=0, label=f"{l} - rest (mean 2-{n_pulses})")]
     handles.append(Line2D([], [], ls="", marker="o", mfc="white", mec="0.4", ms=5, mew=1.2,
                           label="rejected: below criterion / artifact"))
     fig.legend(handles=handles, loc="upper center", ncol=min(len(handles), 5), fontsize=11,

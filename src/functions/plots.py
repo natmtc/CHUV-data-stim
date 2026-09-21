@@ -149,7 +149,8 @@ def plot_latency_combined(meta, t, sig, muscles, picks, resp_end=50.0, save=None
 
 def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a=None, muscles=None,
                       xlim=(-20, 80), gains=None, gain_frac=0.9,
-                      labels=("before lidocaine", "with lidocaine"), colours=None, save=None):
+                      labels=("before lidocaine", "with lidocaine"), colours=None, linestyles=None,
+                      save=None):
     """Per-muscle waterfall with several recordings on the same panel, each trace stacked
     at its own intensity (mA). Gray = first condition, orange = second, blue = third...
 
@@ -171,8 +172,9 @@ def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a
     else:
         recs = [(meta_b, t_b, sig_b), (meta_a, t_a, sig_a)]
     colours = list(colours) if colours else PALETTE[:len(recs)]
+    linestyles = list(linestyles) if linestyles else ["-"] * len(recs)
     labels = list(labels)[:len(recs)]
-    runs = [(m_, t_, s_, c_) for (m_, t_, s_), c_ in zip(recs, colours)]
+    runs = [(m_, t_, s_, c_, l_) for (m_, t_, s_), c_, l_ in zip(recs, colours, linestyles)]
     meta_b, t_b, sig_b = recs[0]
     amps_all = np.array(sorted({m["amp_ma"] for mm, _, _ in recs for m in mm}))
     step = np.median(np.diff(amps_all)) if len(amps_all) > 1 else 10
@@ -180,7 +182,7 @@ def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a
     if not gains:                       # one gain per muscle from both files together
         for m in muscles:
             peaks = []
-            for meta, t, sig, _ in runs:
+            for meta, t, sig, _, _ in runs:
                 tmask = (t >= xlim[0]) & (t <= xlim[1])
                 _, t1 = detect_pulses(t, sig["Trigger A"])[0]
                 rm = tmask & (t > t1)
@@ -194,11 +196,11 @@ def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a
     axes = axes.ravel()
     for i, m in enumerate(muscles):
         ax = axes[i]
-        for meta, t, sig, col in runs:
+        for meta, t, sig, col, ls_ in runs:
             amps = np.array([x["amp_ma"] for x in meta])
             tmask = (t >= xlim[0]) & (t <= xlim[1])
             for w in range(len(amps)):
-                ax.plot(t[tmask], sig[m][w, tmask] * used[m] + amps[w], color=col, lw=0.9,
+                ax.plot(t[tmask], sig[m][w, tmask] * used[m] + amps[w], color=col, lw=0.9, ls=ls_,
                         alpha=(0.8 if col == colours[0] else 0.95))
         for a0, a1 in detect_pulses(t_b, sig_b["Trigger A"]):
             if a1 >= xlim[0] and a0 <= xlim[1]:
@@ -217,7 +219,7 @@ def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a
         axes[k].axis("off")
         if k - ncol >= 0:
             axes[k - ncol].tick_params(labelbottom=True); axes[k - ncol].set_xlabel("Time (ms)")
-    fig.legend(handles=[Line2D([], [], color=c, lw=2.5, label=l) for l, c in zip(labels, colours)],
+    fig.legend(handles=[Line2D([], [], color=c, lw=2.5, ls=ls_, label=l) for l, c, ls_ in zip(labels, colours, linestyles)],
                loc="upper center", ncol=len(labels), fontsize=13, frameon=False,
                bbox_to_anchor=(0.5, 1.0))
     fig.tight_layout(rect=(0, 0, 1, 0.97))
