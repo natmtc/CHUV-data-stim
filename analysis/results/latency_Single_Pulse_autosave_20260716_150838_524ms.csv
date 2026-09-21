@@ -1,0 +1,99 @@
+source_file,muscle,channel,amp_ma,latency_ms,electrode,mode
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (L),L_BB,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (L),L_BB,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (L),L_BB,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (L),L_BB,40,20.65287796540988,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (L),L_BB,50,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (L),L_BB,60,9.416576066968766,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (L),L_BB,70,9.540051912006575,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (L),L_TBlg,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (L),L_TBlg,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (L),L_TBlg,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (L),L_TBlg,40,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (L),L_TBlg,50,8.428769306666247,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (L),L_TBlg,60,11.639141277649422,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (L),L_TBlg,70,9.416576066968766,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (L),L_The_ED_FD_FCR A,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (L),L_The_ED_FD_FCR A,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (L),L_The_ED_FD_FCR A,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (L),L_The_ED_FD_FCR A,40,15.59036831885949,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (L),L_The_ED_FD_FCR A,50,16.701650924199818,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (L),L_The_ED_FD_FCR A,60,16.578175079162,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (L),L_The_ED_FD_FCR A,70,14.602561558556973,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (L),L_The_ED_FD_FCR B,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (L),L_The_ED_FD_FCR B,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (L),L_The_ED_FD_FCR B,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (L),L_The_ED_FD_FCR B,40,14.232134023443528,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (L),L_The_ED_FD_FCR B,50,13.24432726314101,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (L),L_The_ED_FD_FCR B,60,14.355609868481343,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (L),L_The_ED_FD_FCR B,70,13.491278953216645,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (L),L_The_ED_FD_FCR C,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (L),L_The_ED_FD_FCR C,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (L),L_The_ED_FD_FCR C,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (L),L_The_ED_FD_FCR C,40,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (L),L_The_ED_FD_FCR C,50,7.194010856288102,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (L),L_The_ED_FD_FCR C,60,10.898286207422537,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (L),L_The_ED_FD_FCR C,70,8.79919684177969,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (L),L_The_ED_FD_FCR D,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (L),L_The_ED_FD_FCR D,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (L),L_The_ED_FD_FCR D,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (L),L_The_ED_FD_FCR D,40,12.379996347876316,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (L),L_The_ED_FD_FCR D,50,6.576631631099033,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (L),L_The_ED_FD_FCR D,60,10.280906982233468,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (L),L_The_ED_FD_FCR D,70,9.293100221930947,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Deltoid med. (R),R_DELmed,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Deltoid med. (R),R_DELmed,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Deltoid med. (R),R_DELmed,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Deltoid med. (R),R_DELmed,40,6.947059166212476,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Deltoid med. (R),R_DELmed,50,6.947059166212476,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Deltoid med. (R),R_DELmed,60,7.070535011250293,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Deltoid med. (R),R_DELmed,70,7.317486701325919,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (R),R_BB,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (R),R_BB,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (R),R_BB,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (R),R_BB,40,6.082728250947774,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (R),R_BB,50,5.959252405909957,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (R),R_BB,60,5.959252405909957,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Biceps (R),R_BB,70,5.959252405909957,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (R),R_TBlg,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (R),R_TBlg,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (R),R_TBlg,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (R),R_TBlg,40,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (R),R_TBlg,50,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (R),R_TBlg,60,14.479085713519154,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Triceps long (R),R_TBlg,70,13.1208514181032,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Trapezius (R),R_TR,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Trapezius (R),R_TR,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Trapezius (R),R_TR,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Trapezius (R),R_TR,40,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Trapezius (R),R_TR,50,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Trapezius (R),R_TR,60,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Trapezius (R),R_TR,70,11.76261712268724,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (R),R_The_ED_FD_FCR A,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (R),R_The_ED_FD_FCR A,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (R),R_The_ED_FD_FCR A,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (R),R_The_ED_FD_FCR A,40,18.92421613488048,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (R),R_The_ED_FD_FCR A,50,18.677264444804848,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (R),R_The_ED_FD_FCR A,60,18.677264444804848,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Thenar (R),R_The_ED_FD_FCR A,70,18.306836909691405,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (R),R_The_ED_FD_FCR B,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (R),R_The_ED_FD_FCR B,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (R),R_The_ED_FD_FCR B,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (R),R_The_ED_FD_FCR B,40,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (R),R_The_ED_FD_FCR B,50,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (R),R_The_ED_FD_FCR B,60,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Ext. digitorum (R),R_The_ED_FD_FCR B,70,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (R),R_The_ED_FD_FCR C,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (R),R_The_ED_FD_FCR C,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (R),R_The_ED_FD_FCR C,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (R),R_The_ED_FD_FCR C,40,12.009568812762865,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (R),R_The_ED_FD_FCR C,50,9.169624376893132,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (R),R_The_ED_FD_FCR C,60,9.663527757044392,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. digitorum (R),R_The_ED_FD_FCR C,70,8.922672686817506,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (R),R_The_ED_FD_FCR D,10,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (R),R_The_ED_FD_FCR D,20,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (R),R_The_ED_FD_FCR D,30,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (R),R_The_ED_FD_FCR D,40,,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (R),R_The_ED_FD_FCR D,50,9.416576066968766,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (R),R_The_ED_FD_FCR D,60,9.416576066968766,2,monophasic
+Single_Pulse_autosave_20260716_150838_524ms,Flex. carpi rad. (R),R_The_ED_FD_FCR D,70,9.540051912006575,2,monophasic

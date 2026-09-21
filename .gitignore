@@ -1,0 +1,10 @@
+# raw EMG recordings - not in the repo
+tSCS_CHUV_data/
+# local cruft
+.DS_Store
+__pycache__/
+.ipynb_checkpoints/
+*.bak
+.claude/
+# session logs
+*.xlsx
