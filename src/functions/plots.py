@@ -6,7 +6,8 @@ from .labels import pretty
 from .io import detect_stim, detect_pulses
 
 
-def waterfall(meta, t, sig, muscles, xlim=(-20, 80), gain_frac=0.9, gains=None, save=None):
+def waterfall(meta, t, sig, muscles, xlim=(-20, 80), gain_frac=0.9, gains=None, title=None,
+              save=None):
     """Per-muscle waterfall: one trace per intensity, stacked at its amplitude (mA).
 
     Returns the {muscle: gain} actually used. Pass that dict back in as `gains=` for a
@@ -24,9 +25,10 @@ def waterfall(meta, t, sig, muscles, xlim=(-20, 80), gain_frac=0.9, gains=None, 
         respmask = tmask
 
     n = len(muscles)
-    ncol = 4
+    ncol = min(4, n)
     nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(5.0 * ncol, 3.2 * nrow),
+    panel_h = max(3.2, 0.17 * len(np.unique(amps)) + 1.4)      # room for every intensity row
+    fig, axes = plt.subplots(nrow, ncol, figsize=(5.0 * ncol, panel_h * nrow),
                              sharex=True, squeeze=False)
     axes = axes.ravel()
     used = {}
@@ -46,7 +48,9 @@ def waterfall(meta, t, sig, muscles, xlim=(-20, 80), gain_frac=0.9, gains=None, 
             if a1 >= xlim[0] and a0 <= xlim[1]:
                 ax.axvspan(a0, a1, color="red", alpha=0.10, zorder=0)
                 ax.axvline(a0, color="red", lw=1.2, alpha=0.85, zorder=1)
-        ax.set_yticks(np.unique(amps))
+        _u = np.unique(amps)
+        _tk = _u if len(_u) <= 14 else _u[::int(np.ceil(len(_u) / 14))]
+        ax.set_yticks(_tk)
         ax.set_ylim(amps.min() - step, amps.max() + step)
         ax.set_xlim(*xlim)   # keep XLIM authoritative (the artifact band must not widen it)
         ax.set_title(pretty(m), fontweight="bold")
@@ -58,6 +62,9 @@ def waterfall(meta, t, sig, muscles, xlim=(-20, 80), gain_frac=0.9, gains=None, 
     for k in range(n, len(axes)):
         axes[k].axis("off")
     fig.tight_layout()
+    if title:
+        fig.suptitle(title, fontsize=15, fontweight="bold", y=1.0)
+        fig.subplots_adjust(top=0.93)
     if save:
         import os
         os.makedirs(os.path.dirname(save), exist_ok=True)
@@ -150,7 +157,7 @@ def plot_latency_combined(meta, t, sig, muscles, picks, resp_end=50.0, save=None
 def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a=None, muscles=None,
                       xlim=(-20, 80), gains=None, gain_frac=0.9,
                       labels=("before lidocaine", "with lidocaine"), colours=None, linestyles=None,
-                      save=None):
+                      title=None, save=None):
     """Per-muscle waterfall with several recordings on the same panel, each trace stacked
     at its own intensity (mA). Gray = first condition, orange = second, blue = third...
 
@@ -190,8 +197,9 @@ def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a
             pk = max(peaks)
             used[m] = (gain_frac * step) / pk if pk > 0 else 1.0
 
-    n = len(muscles); ncol = 4; nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(5.0 * ncol, 3.2 * nrow), sharex=True,
+    n = len(muscles); ncol = min(4, n); nrow = int(np.ceil(n / ncol))
+    panel_h = max(3.2, 0.17 * len(amps_all) + 1.4)             # room for every intensity row
+    fig, axes = plt.subplots(nrow, ncol, figsize=(5.0 * ncol, panel_h * nrow), sharex=True,
                              squeeze=False)
     axes = axes.ravel()
     for i, m in enumerate(muscles):
@@ -206,7 +214,8 @@ def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a
             if a1 >= xlim[0] and a0 <= xlim[1]:
                 ax.axvspan(a0, a1, color="red", alpha=0.10, zorder=0)
                 ax.axvline(a0, color="red", lw=1.2, alpha=0.85, zorder=1)
-        ax.set_yticks(amps_all)
+        _tk = amps_all if len(amps_all) <= 14 else amps_all[::int(np.ceil(len(amps_all) / 14))]
+        ax.set_yticks(_tk)
         ax.set_ylim(amps_all.min() - step, amps_all.max() + step)
         ax.set_xlim(*xlim)
         ax.set_title(pretty(m), fontweight="bold")
@@ -221,8 +230,10 @@ def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a
             axes[k - ncol].tick_params(labelbottom=True); axes[k - ncol].set_xlabel("Time (ms)")
     fig.legend(handles=[Line2D([], [], color=c, lw=2.5, ls=ls_, label=l) for l, c, ls_ in zip(labels, colours, linestyles)],
                loc="upper center", ncol=len(labels), fontsize=13, frameon=False,
-               bbox_to_anchor=(0.5, 1.0))
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
+               bbox_to_anchor=(0.5, (0.97 if title else 1.0)))
+    if title:
+        fig.suptitle(title, fontsize=15, fontweight="bold", y=1.005)
+    fig.tight_layout(rect=(0, 0, 1, (0.94 if title else 0.97)))
     if save:
         import os
         os.makedirs(os.path.dirname(save), exist_ok=True)
