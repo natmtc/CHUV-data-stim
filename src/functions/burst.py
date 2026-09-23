@@ -264,7 +264,7 @@ def burst_p2p(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_ms
         for m in muscles:
             for key in ("p2p", "tmax", "tmin", "ymax", "ymin"):
                 out[key][m][~responding[m], :] = np.nan
-    out.update(win=win, wins=wins, ipi_ms=ipi, pulse_ms=np.array([p[0] for p in use]),
+    out.update(win=win, wins=wins, ipi_ms=ipi, sample_ms=float(np.median(np.diff(t))), pulse_ms=np.array([p[0] for p in use]),
                freq_hz=(1000.0 / ipi if np.isfinite(ipi) else np.nan),
                noise_p2p=noise, snr_pulse1=snr, responding=responding, reason=reason,
                edge_frac=edge_frac, min_snr=min_snr, max_edge_frac=max_edge_frac,
@@ -1052,6 +1052,24 @@ def summary_curves(csv_before, csv_after, n_pulses=10, resp_start_ms=8.0, resp_e
 # ---------------------------------------------------------------------------
 # RELIABILITY of the automatic peak-to-peak
 # ---------------------------------------------------------------------------
+def _effective_jitter(res, jitter_ms):
+    """The jitter tolerance actually applied, and why it may differ from the one asked for.
+
+    Two floors: it can never be smaller than ~1.5 sampling intervals (latencies are quantised to
+    the sample grid, so a tighter tolerance flags a one-sample difference), and with anchored
+    detection every pulse is already searched within `anchor_win_ms` of the same reference, so the
+    tolerance is at least that window.
+    """
+    floors = [jitter_ms]
+    why = []
+    dt = res.get("sample_ms")
+    if dt and jitter_ms < 1.5 * dt:
+        floors.append(1.5 * dt); why.append(f"1.5 x the {dt:.2f} ms sampling interval")
+    if res.get("anchor") and jitter_ms < res.get("anchor_win_ms", 0):
+        floors.append(res["anchor_win_ms"]); why.append(f"the {res['anchor_win_ms']:g} ms anchor window")
+    return max(floors), why
+
+
 def detection_flags(res, muscles, edge_ms=1.0, jitter_ms=3.0):
     """Automatic sanity checks on every detected max / min. Returns
     flags[muscle] = bool array [n_intensities, n_pulses] (True = suspicious) and a
@@ -1065,6 +1083,7 @@ def detection_flags(res, muscles, edge_ms=1.0, jitter_ms=3.0):
                deflection as the other pulses (noise spike, movement, a different wave)
     """
     onset = res["pulse_ms"]
+    jitter_ms, _ = _effective_jitter(res, jitter_ms)
     flags, why = {}, {}
     for m in muscles:
         tmax, tmin = res["tmax"][m], res["tmin"][m]
@@ -1096,7 +1115,10 @@ def detection_report(res, muscles, meta=None, edge_ms=1.0, jitter_ms=3.0):
     """Print, per muscle, how many detected pulses look suspicious (see
     `detection_flags`) and at which intensities. Returns the flags."""
     flags, why = detection_flags(res, muscles, edge_ms, jitter_ms)
+    eff, reasons = _effective_jitter(res, jitter_ms)
     amps = res["amps"]
+    if reasons:
+        print(f"jitter tolerance {jitter_ms:g} ms -> {eff:g} ms (cannot be below " + " or ".join(reasons) + ")")
     print(f"{'muscle':22s} {'flagged/analysed':>16s}  {'reason':<12s} where (mA: pulses)")
     for m in muscles:
         f = flags[m]; ok = res["responding"][m]
