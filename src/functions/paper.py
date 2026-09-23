@@ -302,3 +302,132 @@ def fig_depression(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms
         os.makedirs(os.path.dirname(csv_out), exist_ok=True)
         pd.DataFrame(table).to_csv(csv_out, index=False); print("saved", csv_out)
     return table
+
+
+# ---------------------------------------------------------------------------
+# motor threshold per muscle: the intensity where the response first appears
+# ---------------------------------------------------------------------------
+def motor_thresholds(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0,
+                     min_snr=2.0, max_edge_frac=0.5, consecutive=2, verbose=True):
+    """Lowest intensity at which a motor response appears, per condition and muscle.
+
+    A train counts as a response when its pulse-1 peak-to-peak clears `min_snr` x the
+    pre-stimulus baseline and it is not rejected as artifact (see `burst_p2p`). The threshold is
+    the lowest intensity that passes **and stays passing for `consecutive` tested intensities** -
+    one isolated pass is a noise spike, not a threshold.
+
+    Returns {condition label: {muscle label: mA or None}}; prints the table unless verbose=False.
+    Use it as the per-muscle intensity of the figures:  amp=MT["cathodic"].
+    """
+    kw = dict(n_pulses=n_pulses, resp_start_ms=resp_start_ms, guard_ms=guard_ms,
+              min_snr=min_snr, max_edge_frac=max_edge_frac)
+    out, snr_at = {}, {}
+    for spec in specs:
+        meta, t, sig = load_run(spec["csv"])
+        chans = resolve_muscles([c for c in sig if c != "Trigger A"], muscles)
+        res = burst_p2p(meta, t, sig, chans, **kw)
+        amps = res["amps"]
+        th, sn = {}, {}
+        for m in chans:
+            ok = res["responding"][m]
+            hit = None
+            for i in range(len(amps)):
+                if all(ok[i:i + consecutive]) and len(ok[i:i + consecutive]) == consecutive:
+                    hit = int(amps[i]); break
+            if hit is None and ok.any():          # only a single passing intensity
+                hit = int(amps[ok].min())
+            th[pretty(m)] = hit
+            sn[pretty(m)] = float(res["snr_pulse1"][m][list(amps).index(hit)]) if hit else np.nan
+        out[spec["label"]] = th; snr_at[spec["label"]] = sn
+    if verbose:
+        labels = [s["label"] for s in specs]
+        names = sorted({m for d in out.values() for m in d})
+        print(f"motor threshold (mA) - first intensity with a response, held for {consecutive} steps")
+        print(f"{'muscle':22s}" + "".join(f"{l:>22s}" for l in labels))
+        for m in names:
+            line = f"{m:22s}"
+            for l in labels:
+                v = out[l].get(m)
+                line += f"{(f'{v} mA  (SNR {snr_at[l][m]:.1f})' if v else '-'):>22s}"
+            print(line)
+    return out
+
+
+def muscles_with_threshold(MT, labels=None):
+    """Muscles that have a motor threshold in every condition - the ones that can be compared."""
+    labels = labels or list(MT)
+    names = sorted({m for l in labels for m in MT[l]})
+    return [m for m in names if all(MT[l].get(m) for l in labels)]
+
+
+def fig_thresholds(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0,
+                   min_snr=2.0, max_edge_frac=0.5, consecutive=2, MT=None, title=None, save=None):
+    """Paper figure: the recruitment curve of each muscle with its motor threshold marked.
+
+    One panel per muscle, x = intensity, y = pulse-1 peak-to-peak (mV). Filled marker = the train
+    passes the response criterion, hollow = it does not. The vertical dashed line and the label
+    are the motor threshold used by the analyses (from `MT` if given, else computed here).
+    """
+    kw = dict(n_pulses=n_pulses, resp_start_ms=resp_start_ms, guard_ms=guard_ms,
+              min_snr=min_snr, max_edge_frac=max_edge_frac)
+    MT = MT or motor_thresholds(specs, muscles, n_pulses, resp_start_ms, guard_ms, min_snr,
+                                max_edge_frac, consecutive, verbose=False)
+    runs = []
+    for spec in specs:
+        meta, t, sig = load_run(spec["csv"])
+        chans = resolve_muscles([c for c in sig if c != "Trigger A"], muscles)
+        res = burst_p2p(meta, t, sig, chans, **kw)
+        raw = burst_p2p(meta, t, sig, chans, n_pulses=n_pulses, resp_start_ms=resp_start_ms,
+                        guard_ms=guard_ms, min_snr=None, max_edge_frac=None)
+        runs.append(dict(spec=spec, res=res, raw=raw, chans=chans))
+    chans = runs[0]["chans"]
+
+    n = len(chans); ncol = 4; nrow = int(np.ceil(n / ncol))
+    fig, axes = plt.subplots(nrow, ncol, figsize=(4.4 * ncol, 3.1 * nrow), squeeze=False, sharex=True)
+    axes = axes.ravel()
+    for i, m in enumerate(chans):
+        ax = axes[i]
+        for r in runs:
+            col = r["spec"].get("colour", "black"); lab = r["spec"]["label"]
+            a = r["res"]["amps"]; ok = r["res"]["responding"][m]
+            p1 = np.array([r["raw"]["p2p"][m][k, 0] for k in range(len(a))], float)
+            ax.plot(a, p1, "-", color=col, lw=1.6, alpha=0.9, zorder=2)
+            ax.plot(a[ok], p1[ok], "o", color=col, ms=6, mew=0, zorder=3)
+            ax.plot(a[~ok], p1[~ok], "o", mfc="white", mec=col, ms=5, mew=1.2, alpha=0.8, zorder=3)
+            th = MT.get(lab, {}).get(pretty(m))
+            if th:
+                ax.axvline(th, color=col, ls="--", lw=1.4, alpha=0.9, zorder=1)
+                ax.annotate(f"{th}", (th, 1.0), xycoords=("data", "axes fraction"), ha="center",
+                            va="bottom", fontsize=10, color=col, fontweight="bold")
+        ax.set_title(pretty(m), fontsize=12, fontweight="bold", pad=16)
+        ax.tick_params(labelsize=10, colors="0.3")
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        for sp in ("left", "bottom"):
+            ax.spines[sp].set_color("0.3")
+        if i % ncol == 0:
+            ax.set_ylabel("1st pulse p2p (mV)", fontsize=11, color="0.2")
+        if i >= n - ncol:
+            ax.set_xlabel("Stim amplitude (mA)", fontsize=11, color="0.2")
+    for k in range(n, len(axes)):
+        axes[k].axis("off")
+        if k - ncol >= 0:
+            axes[k - ncol].tick_params(labelbottom=True)
+            axes[k - ncol].set_xlabel("Stim amplitude (mA)", fontsize=11, color="0.2")
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], color=s.get("colour", "black"), lw=2, marker="o", ms=6, mew=0,
+                      label=s["label"]) for s in specs]
+    handles += [Line2D([], [], ls="", marker="o", mfc="white", mec="0.4", ms=6, mew=1.2,
+                       label="below criterion"),
+                Line2D([], [], color="0.4", ls="--", lw=1.4, label="motor threshold")]
+    fig.legend(handles=handles, loc="upper center", ncol=len(handles), fontsize=11, frameon=False,
+               bbox_to_anchor=(0.5, 1.0))
+    if title:
+        fig.suptitle(title, fontsize=14, fontweight="bold", y=1.045)
+    fig.tight_layout(rect=(0, 0, 1, 0.955))
+    if save:
+        import os
+        os.makedirs(os.path.dirname(save), exist_ok=True)
+        fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+    plt.show()
+    return MT
