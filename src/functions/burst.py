@@ -124,7 +124,7 @@ def _anchored_extrema(rel, segs, ref_idx, win_ms):
 
 def burst_p2p(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_ms=None,
               guard_ms=1.0, min_snr=None, max_edge_frac=0.5, edge_ms=1.0,
-              anchor=None, anchor_win_ms=3.0):
+              anchor=None, anchor_win_ms=3.0, snr_on="median"):
     """Automatic per-pulse peak-to-peak. No manual latencies involved.
 
     n_pulses      : how many pulses of the train to analyse (first N)
@@ -134,8 +134,12 @@ def burst_p2p(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_ms
     resp_end_ms   : end of the window, also from pulse onset; None = run to the next
                     pulse minus `guard_ms`. Same number-or-dict rule.
     guard_ms      : stop this much before the next pulse starts
-    min_snr       : keep only trains with a MOTOR RESPONSE - pulse 1 p2p must exceed
-                    min_snr x the baseline p2p (same window length, pre-stimulus).
+    snr_on        : which pulses the response criterion looks at -
+                    "median" (default) the train's median pulse, "p1" pulse 1 only,
+                    "half" at least half the pulses. "p1" rejects a whole train when its first
+                    pulse happens to be small, even if the other nine respond.
+    min_snr       : keep only trains with a MOTOR RESPONSE - the p2p selected by `snr_on` must
+                    exceed min_snr x the baseline p2p (same window length, pre-stimulus).
                     Trains that fail are set to NaN everywhere so every plot/average
                     downstream only sees real responses. None = keep everything.
     anchor        : how the max/min of each pulse are chosen inside its window.
@@ -245,8 +249,23 @@ def burst_p2p(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_ms
     # response criterion: pulse 1 vs pre-stimulus noise, same window length
     win_len = win[0][1] - win[0][0]
     noise = noise_p2p(t, sig, muscles, win_len)
-    snr = {m: out["p2p"][m][:, 0] / noise[m] for m in muscles}
-    responding = {m: (snr[m] >= min_snr) if min_snr else np.ones(nW, bool) for m in muscles}
+    import warnings as _w
+    snr = {m: out["p2p"][m][:, 0] / noise[m] for m in muscles}                  # pulse 1
+    with _w.catch_warnings():
+        _w.simplefilter("ignore", RuntimeWarning)
+        snr_all = {m: out["p2p"][m] / noise[m][:, None] for m in muscles}       # every pulse
+        snr_med = {m: np.nanmedian(snr_all[m], axis=1) for m in muscles}
+        n_above = {m: np.nansum(snr_all[m] >= (min_snr or 0), axis=1) for m in muscles}
+    if not min_snr:
+        responding = {m: np.ones(nW, bool) for m in muscles}
+    elif snr_on == "p1":
+        responding = {m: snr[m] >= min_snr for m in muscles}
+    elif snr_on == "half":
+        responding = {m: n_above[m] >= int(np.ceil(nP / 2)) for m in muscles}
+    else:
+        responding = {m: snr_med[m] >= min_snr for m in muscles}
+    # a kept train whose FIRST pulse is near noise: p2p ratios to pulse 1 are unreliable there
+    p1_weak = {m: (snr[m] < (min_snr or 0)) & responding[m] for m in muscles}
     reason = {m: np.where(responding[m], "", "below criterion") for m in muscles}
     # artifact rejection: fraction of pulses whose max/min sit on a window border
     edge_frac = {}
@@ -266,7 +285,8 @@ def burst_p2p(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_ms
                 out[key][m][~responding[m], :] = np.nan
     out.update(win=win, wins=wins, ipi_ms=ipi, sample_ms=float(np.median(np.diff(t))), pulse_ms=np.array([p[0] for p in use]),
                freq_hz=(1000.0 / ipi if np.isfinite(ipi) else np.nan),
-               noise_p2p=noise, snr_pulse1=snr, responding=responding, reason=reason,
+               noise_p2p=noise, snr_pulse1=snr, snr_median=snr_med, n_pulses_above=n_above,
+               p1_weak=p1_weak, snr_on=snr_on, responding=responding, reason=reason,
                edge_frac=edge_frac, min_snr=min_snr, max_edge_frac=max_edge_frac,
                dropouts=dropouts, anchor=anchor, anchor_win_ms=anchor_win_ms,
                amps=np.array([m["amp_ma"] for m in meta]))
@@ -337,12 +357,12 @@ def _finish(fig, axes, n, ncol, save):
 
 
 def diagnostics(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_ms=None,
-                guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, amp=None, _res=None):
+                guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, snr_on="median", amp=None, _res=None):
     """Print-only health check of one recording: window used, artifact width per channel
     (does resp_start_ms clear it?), which trains pass the response criterion and from
     which intensity, and any clipped channel. Run it once per file before the figures."""
     res = _res or burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms,
-                            guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms)
+                            guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
     amps = np.array([m["amp_ma"] for m in meta])
     w = int(np.argmax(amps)) if amp is None else int(np.where(amps == amp)[0][0])
     pulses = detect_pulses(t, sig["Trigger A"])[:n_pulses]
@@ -359,11 +379,16 @@ def diagnostics(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_
         print(f"  !! resp_start_ms={resp_start_ms} does NOT clear the artifact on: "
               + ", ".join(f"{pretty(m)} ({v:.1f} ms)" for m, v in late.items()))
     if min_snr:
-        print(f"  response criterion: pulse-1 p2p >= {min_snr} x baseline p2p  ->  trains kept:")
+        what = {"p1": "pulse-1", "half": "at least half the pulses'", "median": "the median pulse's"}[res.get("snr_on", "median")]
+        print(f"  response criterion: {what} p2p >= {min_snr} x baseline p2p  ->  trains kept:")
         for line in responding_table(res, muscles).splitlines():
             print("    " + line)
         # (no single recording-level MT is printed on purpose: proximal channels pass on
         #  artifact recovery alone and would give a meaningless 10 mA - read "from X mA")
+    weak = {m: res["amps"][res["p1_weak"][m]] for m in muscles if res.get("p1_weak", {}).get(m) is not None and res["p1_weak"][m].any()}
+    if weak:
+        print("  !! first pulse near noise (kept, but % of pulse 1 is unreliable there): "
+              + "; ".join(f"{pretty(m)} at {list(v)} mA" for m, v in weak.items()))
     n_drop = {m: int(res["dropouts"][m].sum()) for m in muscles if res["dropouts"][m].any()}
     if n_drop:
         print("  !! sensor DROPOUTS (exact-zero stretches) - those pulses are skipped: "
@@ -376,12 +401,12 @@ def diagnostics(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_
 
 
 def plot_burst_windows(meta, t, sig, muscles, amp=None, n_pulses=10, resp_start_ms=8.0,
-                       resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, zoom=True, save=None):
+                       resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, snr_on="median", zoom=True, save=None):
     """CHECK PLOT — the trace for one intensity with, per pulse: the red artifact band,
     the shaded response window, and the max (red v) / min (blue ^) used for p2p."""
-    res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms)
+    res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
     raw = res if not min_snr else burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms,
-                                            resp_end_ms, guard_ms, None, None, anchor=anchor, anchor_win_ms=anchor_win_ms)
+                                            resp_end_ms, guard_ms, None, None, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
     amps = np.array([m["amp_ma"] for m in meta])
     w = int(np.argmax(amps)) if amp is None else int(np.where(amps == amp)[0][0])
     pulses = detect_pulses(t, sig["Trigger A"])[:n_pulses]
@@ -423,11 +448,11 @@ def plot_burst_windows(meta, t, sig, muscles, amp=None, n_pulses=10, resp_start_
 
 
 def plot_burst_p2p(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_ms=None,
-                   guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, normalize="max", amp=None, save=None):
+                   guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, snr_on="median", normalize="max", amp=None, save=None):
     """Bar plot per muscle: x = pulse # in the train, y = peak-to-peak.
     amp=None -> mean across all intensities (error bar = SD); amp=<mA> -> one intensity."""
     import warnings
-    res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms)
+    res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
     vals = normalize_burst(res, normalize)
     amps = np.array([m["amp_ma"] for m in meta])
     sel = None if amp is None else np.where(amps == amp)[0]
@@ -468,7 +493,7 @@ def plot_burst_p2p(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_e
 
 
 def compare_burst_p2p(csv_before, csv_after, n_pulses=10, resp_start_ms=8.0,
-                      resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, normalize="max", amp=None,
+                      resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, snr_on="median", normalize="max", amp=None,
                       labels=("before lidocaine", "with lidocaine"), save=None):
     """Pre vs post lidocaine, per muscle: paired bars per pulse (gray vs orange),
     dashed line = each condition's mean over the N pulses."""
@@ -481,7 +506,7 @@ def compare_burst_p2p(csv_before, csv_after, n_pulses=10, resp_start_ms=8.0,
     for path, a_sel in zip((csv_before, csv_after), amp_pair):
         meta, t, sig = load_run(path)
         muscles = [c for c in sig if c != "Trigger A"]
-        res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms)
+        res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
         runs.append((meta, muscles, res, normalize_burst(res, normalize), a_sel))
     muscles = [m for m in runs[0][1] if m in runs[1][1]]
     x = np.arange(1, min(len(runs[0][2]["win"]), len(runs[1][2]["win"])) + 1)
@@ -580,10 +605,10 @@ def _bar_first_rest(ax, stats, x0, colour, width=0.38, show_err=True):
 
 
 def plot_first_vs_rest(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0,
-                       resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, normalize="max", amp=None, save=None):
+                       resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, snr_on="median", normalize="max", amp=None, save=None):
     """Two bars per muscle: pulse 1, and the mean of pulses 2..N.
     Error bar = SD across intensities (none when a single `amp` is given)."""
-    res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms)
+    res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
     amps = np.array([m["amp_ma"] for m in meta])
     sel = None if amp is None else np.where(amps == amp)[0]
     st = first_vs_rest(res, normalize, sel)
@@ -609,7 +634,7 @@ def plot_first_vs_rest(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0,
 
 
 def compare_first_vs_rest(csv_before, csv_after, n_pulses=10, resp_start_ms=8.0,
-                          resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, normalize="max", amp=None,
+                          resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, snr_on="median", normalize="max", amp=None,
                           labels=("before lidocaine", "with lidocaine"), save=None):
     """Same as `plot_first_vs_rest`, before (gray) vs with lidocaine (orange) side by side."""
     from .io import load_run
@@ -619,7 +644,7 @@ def compare_first_vs_rest(csv_before, csv_after, n_pulses=10, resp_start_ms=8.0,
     for path, a_sel in zip((csv_before, csv_after), amp_pair):
         meta, t, sig = load_run(path)
         muscles = [c for c in sig if c != "Trigger A"]
-        res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms)
+        res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
         amps = np.array([m["amp_ma"] for m in meta])
         sel = None if a_sel is None else np.where(amps == a_sel)[0]
         if sel is not None and not len(sel):
@@ -668,7 +693,7 @@ def resolve_muscles(available, wanted):
 # ONE intensity (e.g. motor threshold): EMG traces on top, per-pulse bars below
 # ---------------------------------------------------------------------------
 def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=8.0,
-                         resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, normalize="none",
+                         resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, snr_on="median", normalize="none",
                          labels=("before lidocaine", "with lidocaine"), markers=True,
                          title=None, muscles=None, ncol=3, xlim=None, colours=None, hatches=None,
                          linestyles=None, save=None):
@@ -676,7 +701,8 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
     orange = with lidocaine) with the artifact / response windows; bottom = per-pulse
     peak-to-peak of those two traces, side by side.
 
-    amp can be one value (same mA in both files) or a (before, after) pair.
+    amp can be one value (same mA in every file), one per file, or - per file - a
+    {muscle: mA} dict, so each muscle is shown at its own intensity (e.g. its motor threshold).
     normalize: "none"         -> mV (bars match the traces above)
                "before_first" -> % of the BEFORE-lidocaine pulse 1 of that muscle at that
                                  intensity, used as the reference for BOTH conditions. So the
@@ -688,6 +714,14 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
     from matplotlib.patches import Patch
     from matplotlib.gridspec import GridSpecFromSubplotSpec
 
+    def _amp_of(a_, m_):                 # scalar, or {muscle: mA} by label or channel
+        if isinstance(a_, dict):
+            for k in (m_, pretty(m_)):
+                if k in a_:
+                    return a_[k]
+            return a_.get("default")
+        return a_
+
     paths, labels, colours = _conditions(csv_before, csv_after, labels, colours)
     hatches = list(hatches) if hatches else [""] * len(paths)          # e.g. ["", "", "//", "//"]
     linestyles = list(linestyles) if linestyles else ["-"] * len(paths)
@@ -697,17 +731,25 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
         meta, t, sig = load_run(path)
         chans = [c for c in sig if c != "Trigger A"]
         amps = np.array([d["amp_ma"] for d in meta])
-        w = np.where(amps == a_sel)[0]
-        if not len(w):
-            raise ValueError(f"{a_sel} mA not in {path.split('/')[-1]}: {sorted(set(amps))}")
-        res = burst_p2p(meta, t, sig, chans, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms)
+        w = {}
+        for m_ in chans:
+            a_ = _amp_of(a_sel, m_)
+            idx = np.where(amps == a_)[0] if a_ is not None else []
+            w[m_] = int(idx[0]) if len(idx) else None
+        if all(v is None for v in w.values()):
+            raise ValueError(f"none of the requested intensities exist in "
+                             f"{path.split('/')[-1]}: {sorted(set(amps))}")
+        res = burst_p2p(meta, t, sig, chans, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
         raw = res if not min_snr else burst_p2p(meta, t, sig, chans, n_pulses, resp_start_ms,
-                                                resp_end_ms, guard_ms, None, None, anchor=anchor, anchor_win_ms=anchor_win_ms)
-        runs.append(dict(t=t, sig=sig, muscles=chans, w=int(w[0]), res=res, raw=raw,
+                                                resp_end_ms, guard_ms, None, None, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
+        runs.append(dict(t=t, sig=sig, muscles=chans, w=w, amp_sel=a_sel, res=res, raw=raw,
                          vals=normalize_burst(res, normalize), amp=a_sel,
                          pulses=detect_pulses(t, sig["Trigger A"])[:n_pulses]))
     common = [m for m in runs[0]["muscles"] if all(m in r["muscles"] for r in runs)]
     muscles = resolve_muscles(common, muscles)
+    muscles = [m for m in muscles if all(r["w"].get(m) is not None for r in runs)]
+    if not muscles:
+        raise ValueError("no muscle has the requested intensity in every condition")
     npul = min(len(r["res"]["win"]) for r in runs)
     nc = len(runs); bw = 0.8 / nc                        # bar width per condition
     offs = [(j - (nc - 1) / 2) * bw for j in range(nc)]
@@ -720,7 +762,7 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
         for r in runs:
             r["vals"] = {}
             for m in muscles:
-                ref = r0["raw"]["p2p"][m][r0["w"], 0]
+                ref = r0["raw"]["p2p"][m][r0["w"][m], 0]
                 with np.errstate(invalid="ignore", divide="ignore"):
                     r["vals"][m] = 100.0 * r["res"]["p2p"][m] / ref
     ylab = {"max": "% of max", "first": "% of p1", "none": "p2p (mV)",
@@ -743,11 +785,11 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
         # ---- top: the two traces at this intensity -------------------------
         lo, hi = np.inf, -np.inf
         for r, col, ls_ in zip(runs, colours, linestyles):
-            t, y = r["t"], r["sig"][m][r["w"]]
+            t, y = r["t"], r["sig"][m][r["w"][m]]
             mask = (t >= xlim[0]) & (t <= xlim[1])
             ax_t.plot(t[mask], y[mask], color=col, lw=1.1, alpha=0.95, ls=ls_)
             if markers:   # the exact max (v) and min (^) each bar below is made of
-                rr, ww = r["raw"], r["w"]
+                rr, ww = r["raw"], r["w"][m]
                 ax_t.plot(rr["tmax"][m][ww, :npul], rr["ymax"][m][ww, :npul], "v", ms=5,
                           color=col, mec="black", mew=0.6, zorder=6)
                 ax_t.plot(rr["tmin"][m][ww, :npul], rr["ymin"][m][ww, :npul], "^", ms=5,
@@ -765,6 +807,13 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
             pad = 0.25 * (hi - lo) or 0.01
             ax_t.set_ylim(lo - pad, hi + pad)
         ax_t.set_xlim(*xlim)
+        if any(isinstance(r["amp_sel"], dict) for r in runs):   # per-muscle mA: write them out
+            x_t = 1.0
+            for r, col in zip(reversed(runs), reversed(colours)):
+                ma = r["res"]["amps"][r["w"][m]]
+                ax_t.annotate(f"{ma} mA", (x_t, 1.0), xycoords="axes fraction", ha="right",
+                              va="bottom", fontsize=9.5, color=col, fontweight="bold")
+                x_t -= 0.085
         ax_t.set_title("EMG traces  (v = max, ^ = min used for each pulse)" if single else pretty(m),
                        fontweight="bold", fontsize=(12 if single else None))
         for j, (b, col) in enumerate(zip(bad, colours)):
@@ -781,7 +830,7 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
 
         # ---- bottom: per-pulse p2p of exactly those two traces --------------
         for j, (r, col) in enumerate(zip(runs, colours)):
-            y = r["vals"][m][r["w"], :npul]
+            y = r["vals"][m][r["w"][m], :npul]
             ax_b.bar(x + offs[j], y, width=bw * 0.95, color=col, hatch=hatches[j],
                      edgecolor=("white" if hatches[j] else "none"), lw=0)
             if np.isfinite(y).any():
@@ -803,7 +852,7 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
 
         # ---- third row: pulse 1 vs the mean of pulses 2..N, same two trains -----
         for j, (r, col) in enumerate(zip(runs, colours)):
-            y = r["vals"][m][r["w"], :npul]
+            y = r["vals"][m][r["w"][m], :npul]
             tail = y[1:][np.isfinite(y[1:])]
             rest, rest_sd = (tail.mean(), tail.std()) if len(tail) else (np.nan, np.nan)
             # pulse 1 is a single value -> no error bar; the mean bar gets +- SD over pulses 2..N
@@ -824,14 +873,17 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
         if i % ncol == 0:
             ax_s.set_ylabel(ylab, fontsize=11)
         for j, (r, col) in enumerate(zip(runs, colours)):          # say WHY a train is out
-            if not r["res"]["responding"][m][r["w"]]:
-                why = r["res"]["reason"][m][r["w"]]
+            if not r["res"]["responding"][m][r["w"][m]]:
+                why = r["res"]["reason"][m][r["w"][m]]
                 dy = 0.92 - 0.12 * j
                 ax_b.text(0.98, dy, ("ARTIFACT - rejected" if why == "artifact" else "below criterion"),
                           transform=ax_b.transAxes, ha="right", va="top", color=col,
                           fontsize=9, fontweight="bold")
 
-    handles = [Patch(facecolor=c, hatch=h, edgecolor=("white" if h else "none"), label=f"{l} ({a} mA)")
+    def _amp_label(a_):
+        return "per-muscle mA" if isinstance(a_, dict) else f"{a_} mA"
+    handles = [Patch(facecolor=c, hatch=h, edgecolor=("white" if h else "none"),
+                     label=f"{l} ({_amp_label(a)})")
                for l, a, c, h in zip(labels, amp_pair, colours, hatches)]
     if single:                      # title + legend in their own band above the panels
         if title:
@@ -870,7 +922,7 @@ def train_metric(res, normalize="none"):
 
 
 def summary_heatmap(csv_before, csv_after, metric="rest_first", n_pulses=10,
-                    resp_start_ms=8.0, resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0,
+                    resp_start_ms=8.0, resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, snr_on="median",
                     labels=("before lidocaine", "with lidocaine"), save=None):
     """Two heatmaps side by side (before | with lidocaine): rows = muscles,
     columns = intensities, colour = `metric` of THAT train. Nothing is averaged.
@@ -886,7 +938,7 @@ def summary_heatmap(csv_before, csv_after, metric="rest_first", n_pulses=10,
     for path in (csv_before, csv_after):
         meta, t, sig = load_run(path)
         muscles = [c for c in sig if c != "Trigger A"]
-        res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms)
+        res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
         runs.append((res, train_metric(res), clipped_channels(sig, muscles)))
     muscles = [m for m in runs[0][0]["p2p"] if m in runs[1][0]["p2p"]]
     amps_all = sorted(set(runs[0][0]["amps"]) | set(runs[1][0]["amps"]))
@@ -947,7 +999,7 @@ def summary_heatmap(csv_before, csv_after, metric="rest_first", n_pulses=10,
 # summary as RECRUITMENT CURVES: x = intensity, y = response - nothing averaged
 # ---------------------------------------------------------------------------
 def summary_curves(csv_before, csv_after, n_pulses=10, resp_start_ms=8.0, resp_end_ms=None,
-                   guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, labels=("before lidocaine", "with lidocaine"),
+                   guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, snr_on="median", labels=("before lidocaine", "with lidocaine"),
                    colours=None, markers=None, save=None):
     """Per muscle, two rows, x = stimulation intensity (mA):
 
@@ -970,9 +1022,9 @@ def summary_curves(csv_before, csv_after, n_pulses=10, resp_start_ms=8.0, resp_e
     for path in paths:
         meta, t, sig = load_run(path)
         muscles = [c for c in sig if c != "Trigger A"]
-        res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms)
+        res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
         raw = res if not min_snr else burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms,
-                                                resp_end_ms, guard_ms, None, None, anchor=anchor, anchor_win_ms=anchor_win_ms)
+                                                resp_end_ms, guard_ms, None, None, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
         runs.append(dict(res=res, tm=train_metric(res), raw_tm=train_metric(raw),
                          amps=res["amps"], bad=clipped_channels(sig, muscles)))
     muscles = [m for m in runs[0]["res"]["p2p"] if all(m in r["res"]["p2p"] for r in runs)]
@@ -1144,7 +1196,7 @@ def detection_report(res, muscles, meta=None, edge_ms=1.0, jitter_ms=3.0):
 
 
 def plot_pulse_overlay(meta, t, sig, muscles, amp, n_pulses=10, resp_start_ms=8.0,
-                       resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, edge_ms=1.0,
+                       resp_end_ms=None, guard_ms=1.0, min_snr=None, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0, snr_on="median", edge_ms=1.0,
                        jitter_ms=3.0, title=None, ncol=4, save=None):
     """THE reliability check. Per muscle, for ONE intensity: the N pulse segments cut
     out of the trace and RE-ALIGNED to their own pulse onset (t = 0), overlaid, colour
@@ -1157,7 +1209,7 @@ def plot_pulse_overlay(meta, t, sig, muscles, amp, n_pulses=10, resp_start_ms=8.
     """
     all_ch = [c for c in sig if c != "Trigger A"]
     muscles = resolve_muscles(all_ch, muscles)
-    res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms)
+    res = burst_p2p(meta, t, sig, muscles, n_pulses, resp_start_ms, resp_end_ms, guard_ms, min_snr, max_edge_frac, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
     flags, _ = detection_flags(res, muscles, edge_ms, jitter_ms)
     amps = res["amps"]; w = int(np.where(amps == amp)[0][0])
     onset = res["pulse_ms"]; ipi = res["ipi_ms"]

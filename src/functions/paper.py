@@ -60,7 +60,8 @@ def _nice_scale(rng):
 
 
 def fig_train_modes(specs, muscles, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0, min_snr=None,
-                    max_edge_frac=None, xlim=None, title=None, save=None):
+                    max_edge_frac=None, anchor=None, anchor_win_ms=3.0, snr_on="median",
+                    xlim=None, title=None, save=None, resp_end_ms=None):
     """specs: list of dict(label=, csv=, amp=, colour=, linestyle=, hatch=).
     `amp` is one mA for every muscle, or {muscle: mA} (pretty label or channel; 'default' allowed).
     muscles: 2-3 labels.
@@ -70,8 +71,9 @@ def fig_train_modes(specs, muscles, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0
     right - pulse 1 (reference, outlined) vs mean of pulses 2..N (filled), each condition as % of
             its own pulse 1; bar = mean over the muscles, whisker = SD, dots = muscles
     """
-    kw = dict(n_pulses=n_pulses, resp_start_ms=resp_start_ms, guard_ms=guard_ms,
-              min_snr=min_snr, max_edge_frac=max_edge_frac)
+    kw = dict(n_pulses=n_pulses, resp_start_ms=resp_start_ms, resp_end_ms=resp_end_ms,
+              guard_ms=guard_ms, min_snr=min_snr, max_edge_frac=max_edge_frac, anchor=anchor,
+              anchor_win_ms=anchor_win_ms, snr_on=snr_on)
     runs = [_load(s, muscles, kw) for s in specs]
     muscles = runs[0]["muscles"]
     npul = min(len(r["res"]["win"]) for r in runs)
@@ -191,15 +193,17 @@ def fig_train_modes(specs, muscles, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0
 # depression along the train: 1st vs 2nd pulse, and 1st vs the N-1 following
 # ---------------------------------------------------------------------------
 def depression_stats(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0,
-                     min_snr=2.0, max_edge_frac=0.5):
+                     min_snr=2.0, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0,
+                     snr_on="median", resp_end_ms=None):
     """Per condition and muscle: pulse-1 p2p, pulse-2 p2p, mean of pulses 2..N, and the two
     ratios (as % of pulse 1). Only muscles with a motor response in EVERY condition are kept,
     so the conditions are compared on the same set (paired).
 
     Returns (table, kept, dropped) - table is a list of dicts, one row per condition x muscle."""
     import warnings
-    kw = dict(n_pulses=n_pulses, resp_start_ms=resp_start_ms, guard_ms=guard_ms,
-              min_snr=min_snr, max_edge_frac=max_edge_frac)
+    kw = dict(n_pulses=n_pulses, resp_start_ms=resp_start_ms, resp_end_ms=resp_end_ms,
+              guard_ms=guard_ms, min_snr=min_snr, max_edge_frac=max_edge_frac, anchor=anchor,
+              anchor_win_ms=anchor_win_ms, snr_on=snr_on)
     runs = [_load(s, muscles, kw) for s in specs]
     ms = runs[0]["muscles"]
     npul = min(len(r["res"]["win"]) for r in runs)
@@ -231,8 +235,8 @@ def depression_stats(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_
 
 
 def fig_depression(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0,
-                   min_snr=2.0, max_edge_frac=0.5, metric="ratio", title=None, csv_out=None,
-                   save=None):
+                   min_snr=2.0, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0,
+                   snr_on="median", metric="ratio", title=None, csv_out=None, save=None, resp_end_ms=None):
     """Paper figure: how much the response drops after the first pulse, per condition.
 
     Left panel  - 2nd pulse vs the 1st.
@@ -242,7 +246,8 @@ def fig_depression(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms
     same muscle across conditions. Only muscles responding in every condition are used.
     """
     table, kept, dropped = depression_stats(specs, muscles, n_pulses, resp_start_ms, guard_ms,
-                                            min_snr, max_edge_frac)
+                                            min_snr, max_edge_frac, anchor, anchor_win_ms, snr_on,
+                                            resp_end_ms=resp_end_ms)
     labels = [s["label"] for s in specs]
     colours = [s.get("colour", "black") for s in specs]
     hatches = [s.get("hatch", "") for s in specs]
@@ -308,7 +313,8 @@ def fig_depression(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms
 # motor threshold per muscle: the intensity where the response first appears
 # ---------------------------------------------------------------------------
 def motor_thresholds(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0,
-                     min_snr=2.0, max_edge_frac=0.5, consecutive=2, verbose=True):
+                     min_snr=2.0, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0,
+                     snr_on="median", consecutive=2, verbose=True, resp_end_ms=None):
     """Lowest intensity at which a motor response appears, per condition and muscle.
 
     A train counts as a response when its pulse-1 peak-to-peak clears `min_snr` x the
@@ -319,8 +325,9 @@ def motor_thresholds(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_
     Returns {condition label: {muscle label: mA or None}}; prints the table unless verbose=False.
     Use it as the per-muscle intensity of the figures:  amp=MT["cathodic"].
     """
-    kw = dict(n_pulses=n_pulses, resp_start_ms=resp_start_ms, guard_ms=guard_ms,
-              min_snr=min_snr, max_edge_frac=max_edge_frac)
+    kw = dict(n_pulses=n_pulses, resp_start_ms=resp_start_ms, resp_end_ms=resp_end_ms,
+              guard_ms=guard_ms, min_snr=min_snr, max_edge_frac=max_edge_frac, anchor=anchor,
+              anchor_win_ms=anchor_win_ms, snr_on=snr_on)
     out, snr_at = {}, {}
     for spec in specs:
         meta, t, sig = load_run(spec["csv"])
@@ -361,24 +368,28 @@ def muscles_with_threshold(MT, labels=None):
 
 
 def fig_thresholds(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0,
-                   min_snr=2.0, max_edge_frac=0.5, consecutive=2, MT=None, title=None, save=None):
+                   min_snr=2.0, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0,
+                   snr_on="median", consecutive=2, MT=None, title=None, save=None, resp_end_ms=None):
     """Paper figure: the recruitment curve of each muscle with its motor threshold marked.
 
     One panel per muscle, x = intensity, y = pulse-1 peak-to-peak (mV). Filled marker = the train
     passes the response criterion, hollow = it does not. The vertical dashed line and the label
     are the motor threshold used by the analyses (from `MT` if given, else computed here).
     """
-    kw = dict(n_pulses=n_pulses, resp_start_ms=resp_start_ms, guard_ms=guard_ms,
-              min_snr=min_snr, max_edge_frac=max_edge_frac)
+    kw = dict(n_pulses=n_pulses, resp_start_ms=resp_start_ms, resp_end_ms=resp_end_ms,
+              guard_ms=guard_ms, min_snr=min_snr, max_edge_frac=max_edge_frac, anchor=anchor,
+              anchor_win_ms=anchor_win_ms, snr_on=snr_on)
     MT = MT or motor_thresholds(specs, muscles, n_pulses, resp_start_ms, guard_ms, min_snr,
-                                max_edge_frac, consecutive, verbose=False)
+                                max_edge_frac, anchor, anchor_win_ms, snr_on, consecutive,
+                                verbose=False, resp_end_ms=resp_end_ms)
     runs = []
     for spec in specs:
         meta, t, sig = load_run(spec["csv"])
         chans = resolve_muscles([c for c in sig if c != "Trigger A"], muscles)
         res = burst_p2p(meta, t, sig, chans, **kw)
         raw = burst_p2p(meta, t, sig, chans, n_pulses=n_pulses, resp_start_ms=resp_start_ms,
-                        guard_ms=guard_ms, min_snr=None, max_edge_frac=None)
+                        resp_end_ms=resp_end_ms, guard_ms=guard_ms, min_snr=None,
+                        max_edge_frac=None, anchor=anchor, anchor_win_ms=anchor_win_ms, snr_on=snr_on)
         runs.append(dict(spec=spec, res=res, raw=raw, chans=chans))
     chans = runs[0]["chans"]
 
