@@ -185,3 +185,120 @@ def fig_train_modes(specs, muscles, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0
         fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
     plt.show()
     return {r["label"]: r["_rest"] for r in runs}
+
+
+# ---------------------------------------------------------------------------
+# depression along the train: 1st vs 2nd pulse, and 1st vs the N-1 following
+# ---------------------------------------------------------------------------
+def depression_stats(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0,
+                     min_snr=2.0, max_edge_frac=0.5):
+    """Per condition and muscle: pulse-1 p2p, pulse-2 p2p, mean of pulses 2..N, and the two
+    ratios (as % of pulse 1). Only muscles with a motor response in EVERY condition are kept,
+    so the conditions are compared on the same set (paired).
+
+    Returns (table, kept, dropped) - table is a list of dicts, one row per condition x muscle."""
+    import warnings
+    kw = dict(n_pulses=n_pulses, resp_start_ms=resp_start_ms, guard_ms=guard_ms,
+              min_snr=min_snr, max_edge_frac=max_edge_frac)
+    runs = [_load(s, muscles, kw) for s in specs]
+    ms = runs[0]["muscles"]
+    npul = min(len(r["res"]["win"]) for r in runs)
+
+    vals = {}
+    for r in runs:
+        for m in ms:
+            y = r["res"]["p2p"][m][r["w"][m], :npul]
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                ok = np.isfinite(y[0]) and y[0] > 0 and np.isfinite(y[1:]).any()
+                vals[(r["label"], m)] = dict(
+                    p1=float(y[0]) if ok else np.nan,
+                    p2=float(y[1]) if ok else np.nan,
+                    rest=float(np.nanmean(y[1:])) if ok else np.nan,
+                    amp=r["amp_used"][m])
+    kept = [m for m in ms if all(np.isfinite(vals[(r["label"], m)]["p1"]) for r in runs)]
+    dropped = [m for m in ms if m not in kept]
+
+    table = []
+    for r in runs:
+        for m in kept:
+            v = vals[(r["label"], m)]
+            table.append(dict(condition=r["label"], muscle=pretty(m), channel=m, amp_ma=v["amp"],
+                              p1_mV=v["p1"], p2_mV=v["p2"], rest_mV=v["rest"],
+                              p2_minus_p1_mV=v["p2"] - v["p1"], rest_minus_p1_mV=v["rest"] - v["p1"],
+                              p2_pct=100 * v["p2"] / v["p1"], rest_pct=100 * v["rest"] / v["p1"]))
+    return table, kept, dropped
+
+
+def fig_depression(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0,
+                   min_snr=2.0, max_edge_frac=0.5, metric="ratio", title=None, csv_out=None,
+                   save=None):
+    """Paper figure: how much the response drops after the first pulse, per condition.
+
+    Left panel  - 2nd pulse vs the 1st.
+    Right panel - mean of pulses 2..N vs the 1st.
+    metric="ratio" -> % of pulse 1 (100 % = no change) · "diff" -> difference in mV.
+    Bar = mean over the muscles, whisker = SD, dots = the individual muscles, grey lines join the
+    same muscle across conditions. Only muscles responding in every condition are used.
+    """
+    table, kept, dropped = depression_stats(specs, muscles, n_pulses, resp_start_ms, guard_ms,
+                                            min_snr, max_edge_frac)
+    labels = [s["label"] for s in specs]
+    colours = [s.get("colour", "black") for s in specs]
+    hatches = [s.get("hatch", "") for s in specs]
+    keyA, keyB = ("p2_pct", "rest_pct") if metric == "ratio" else ("p2_minus_p1_mV", "rest_minus_p1_mV")
+    ylab = "Peak-to-peak (% of 1st pulse)" if metric == "ratio" else "Peak-to-peak − 1st pulse (mV)"
+    by = {(row["condition"], row["muscle"]): row for row in table}
+    names = [pretty(m) for m in kept]
+
+    fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.6), sharey=True)
+    rng = np.random.default_rng(0)
+    for ax, key, ttl in zip(axes, (keyA, keyB),
+                            ("2nd pulse", f"mean of pulses 2–{n_pulses}")):
+        pts = []
+        for j, (lab, col, hat) in enumerate(zip(labels, colours, hatches)):
+            v = np.array([by[(lab, n)][key] for n in names], float)
+            ax.bar(j, np.nanmean(v), width=0.6, facecolor=col, alpha=0.85, hatch=hat,
+                   edgecolor=("white" if hat else "none"), lw=0,
+                   yerr=np.nanstd(v), error_kw=dict(ecolor="0.15", lw=1.3, capsize=5), zorder=2)
+            xs = j + rng.uniform(-0.13, 0.13, len(v))
+            ax.scatter(xs, v, s=34, facecolor="white", edgecolor=col, linewidth=1.4, zorder=5)
+            pts.append((xs, v))
+        for k in range(len(names)):                      # join the same muscle across conditions
+            xs = [p[0][k] for p in pts]; ys = [p[1][k] for p in pts]
+            if np.all(np.isfinite(ys)):
+                ax.plot(xs, ys, color="0.72", lw=0.8, zorder=4)
+        ax.axhline(100 if metric == "ratio" else 0, color="0.4", lw=0.9, ls=(0, (2, 3)))
+        ax.set_xticks(range(len(labels)))
+        ax.set_xticklabels(labels, fontsize=11)
+        ax.set_title(ttl, fontsize=13, fontweight="bold")
+        ax.tick_params(labelsize=10, colors="0.3")
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        for sp in ("left", "bottom"):
+            ax.spines[sp].set_color("0.3")
+    axes[0].set_ylabel(ylab, fontsize=12, color="0.2")
+    fig.text(0.5, -0.02, f"bar = mean of {len(names)} muscles, whisker = SD, dots = muscles "
+             f"(grey lines join the same muscle)", ha="center", fontsize=9.5, color="0.45")
+    if title:
+        fig.suptitle(title, fontsize=14, fontweight="bold", y=1.03)
+    fig.tight_layout()
+    if save:
+        import os
+        os.makedirs(os.path.dirname(save), exist_ok=True)
+        fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+    plt.show()
+
+    print(f"muscles used ({len(names)}): " + ", ".join(names))
+    if dropped:
+        print("dropped (no response in at least one condition): " + ", ".join(pretty(m) for m in dropped))
+    for lab in labels:
+        p2 = np.array([by[(lab, n)]["p2_pct"] for n in names], float)
+        rest = np.array([by[(lab, n)]["rest_pct"] for n in names], float)
+        print(f"{lab:28s} 2nd pulse {np.nanmean(p2):5.0f} +- {np.nanstd(p2):4.0f} %   "
+              f"pulses 2-{n_pulses} {np.nanmean(rest):5.0f} +- {np.nanstd(rest):4.0f} % of pulse 1")
+    if csv_out:
+        import os, pandas as pd
+        os.makedirs(os.path.dirname(csv_out), exist_ok=True)
+        pd.DataFrame(table).to_csv(csv_out, index=False); print("saved", csv_out)
+    return table
