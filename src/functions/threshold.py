@@ -14,6 +14,25 @@ from IPython.display import display
 from .labels import pretty
 from .io import detect_pulses
 
+# Widgets and figures live in the kernel, not in the cell: re-running the pick cell builds a
+# second set and the frontend shows both. Each call closes the one before it.
+_OPEN = {"widgets": [], "fig": None}
+
+
+def _close_previous():
+    for w in _OPEN["widgets"]:
+        try:
+            w.close()
+        except Exception:
+            pass
+    _OPEN["widgets"] = []
+    if _OPEN["fig"] is not None:
+        try:
+            plt.close(_OPEN["fig"])
+        except Exception:
+            pass
+        _OPEN["fig"] = None
+
 
 def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest=None,
                      gain_frac=0.9, mode="auto"):
@@ -89,10 +108,12 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
         ax.grid(True, axis="x", alpha=0.25)
 
     # ---- the two ways of getting that figure on screen ---------------------------------
+    _close_previous()
     out = W.Output()
     fig = ax = None
     if live:                       # ipympl: one canvas, redrawn in place, clickable
         fig, ax = plt.subplots(figsize=(9.5, 6.5))
+        _OPEN["fig"] = fig
         try:
             fig.canvas.header_visible = False
             fig.canvas.toolbar_position = "right"
@@ -169,9 +190,10 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
     sl.observe(on_slider, names="value")
     mdrop.observe(on_muscle, names="value")
 
-    display(W.VBox([W.HBox([mdrop, b_prev, b_next, b_take, b_none]), sl]))
-    if not live:
-        display(out)
+    panel = W.VBox([W.HBox([mdrop, b_prev, b_next, b_take, b_none]), sl]
+                   + ([] if live else [out]))
+    _OPEN["widgets"] = [panel, out, sl, mdrop, b_prev, b_next, b_take, b_none]
+    display(panel)
     draw()
     return picks
 
