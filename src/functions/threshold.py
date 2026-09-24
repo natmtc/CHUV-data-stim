@@ -44,7 +44,7 @@ def _close_previous():
 
 
 def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest=None,
-                     gain_frac=0.9, mode="auto"):
+                     gain_frac=0.9, mode="auto", on_save=None):
     """Pick the motor threshold, one muscle at a time.
 
     Every intensity of the recording is drawn stacked at its own mA, exactly like `waterfall`.
@@ -57,6 +57,8 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
            "click" additionally lets you click the trace itself, but needs `%matplotlib widget`
            (ipympl) to be active AND rendering. "auto" (default) uses "click" when the ipympl
            backend is live and falls back to "buttons" otherwise.
+    on_save : called with `picks` by a Save button next to the controls, so one cell is the
+              whole job - open, pick, save. Whatever it returns is shown beside the button.
     picks   : a previous session's dict, `picks[channel] = mA or nan`, to resume or correct.
     suggest : {muscle or label: mA} drawn as a green dotted line - the automatic threshold, so
               you can see where the detector put it before overriding it.
@@ -173,10 +175,21 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
     b_prev = W.Button(description="◀ Prev"); b_next = W.Button(description="Next ▶")
     b_none = W.Button(description="No response", button_style="warning")
     b_take = W.Button(description="Take detected", button_style="info")
+    b_save = W.Button(description="Save", button_style="success", icon="save")
+    status = W.HTML("")
 
     def _set(v):
         picks[muscles[state["mi"]]] = v
         draw()
+
+    def do_save(_):
+        n = sum(1 for v in picks.values() if v == v)
+        try:
+            where = on_save(picks)
+            status.value = (f"<span style='color:#2ca25f'><b>saved</b> {n} of {len(muscles)} "
+                            f"muscles &rarr; {where}</span>")
+        except Exception as e:                       # a refused save must not kill the picker
+            status.value = f"<span style='color:#d62728'><b>not saved</b> - {e}</span>"
 
     def on_slider(ch):
         if state["mute"] or ch["new"] is None:
@@ -194,13 +207,15 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
 
     b_prev.on_click(lambda _: go(-1)); b_next.on_click(lambda _: go(+1))
     b_none.on_click(lambda _: _set(np.nan))
+    b_save.on_click(do_save)
     b_take.on_click(lambda _: _set(float(_suggested(muscles[state["mi"]]) or np.nan)))
     sl.observe(on_slider, names="value")
     mdrop.observe(on_muscle, names="value")
 
-    panel = W.VBox([W.HBox([mdrop, b_prev, b_next, b_take, b_none]), sl]
-                   + ([] if live else [img]))
-    _open()["widgets"] = [panel, img, sl, mdrop, b_prev, b_next, b_take, b_none]
+    row = [mdrop, b_prev, b_next, b_take, b_none] + ([b_save] if on_save else [])
+    panel = W.VBox([W.HBox(row), sl] + ([] if live else [img])
+                   + ([W.HBox([status])] if on_save else []))
+    _open()["widgets"] = [panel, img, sl, mdrop, b_prev, b_next, b_take, b_none, b_save, status]
     clear_output(wait=True)      # drop whatever this cell showed on its last run
     display(panel)
     draw()

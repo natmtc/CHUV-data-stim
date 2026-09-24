@@ -47,10 +47,11 @@ per recording so they survive a re-run:
 | response latency, per muscle x intensity | single pulse | `results/latency_<recording>.csv` |
 | motor threshold, per muscle | `Burst_vs_ARCex` | `results/mt_<recording>.csv` |
 
-The threshold picker stacks every intensity of one muscle as a waterfall; a slider sets the
-threshold to the lowest trace that carries a real response (no `%matplotlib widget` needed, so it
-works in VS Code too). Every muscle is then analysed **at** its threshold - the trace you pick is
-the trace the figures are drawn from (`MT_STEPS` can step above it instead). Where a `mt_*.csv` exists it replaces the detected threshold
+The threshold picker is one cell per recording - `pick(("burst", "cathodic", "before"))`. It
+stacks every intensity of one muscle as a waterfall; a slider sets the threshold to the lowest
+trace that carries a real response, and **Save** writes the file. No `%matplotlib widget` needed,
+so it works in VS Code too. Every muscle is then analysed **at** its threshold - the trace you
+pick is the trace the figures are drawn from (`MT_STEPS` can step above it instead). Where a `mt_*.csv` exists it replaces the detected threshold
 for that recording, so re-run the threshold cell after saving and every figure follows.
 
 All train notebooks share the same peak-detection settings, set in each config cell:
