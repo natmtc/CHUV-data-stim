@@ -165,6 +165,12 @@ def save_threshold_csv(picks, muscles, csv_path, meta=None, out_dir="results", o
                 f"cell for the file you want, then pick again.")
 
     new_has = any(v == v for v in picks.values())
+    if not new_has and not overwrite:
+        # an all-empty file would replace the detected thresholds with nothing, so a stray
+        # run of the save cell must not create one
+        print(f"⚠ NOT saved: nothing is picked yet. Pick in B first "
+              f"(pass overwrite=True if you really mean 'no muscle responds here').")
+        return out_csv
     if os.path.exists(out_csv) and not overwrite:
         if pd.read_csv(out_csv)["mt_ma"].notna().any() and not new_has:
             print(f"⚠ NOT saved: {out_csv} already has thresholds and the current picks are "
