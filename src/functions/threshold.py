@@ -16,20 +16,27 @@ from .io import detect_pulses
 
 
 def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest=None,
-                     gain_frac=0.9):
-    """Click-to-pick motor threshold, one muscle at a time.
+                     gain_frac=0.9, mode="auto"):
+    """Pick the motor threshold, one muscle at a time.
 
-    Requires `%matplotlib widget`. Every intensity of the recording is drawn stacked at its own
-    mA, exactly like `waterfall`. Click ON (or next to) the lowest trace that shows a response:
-    that intensity becomes the muscle's motor threshold and is drawn in orange. `No response`
-    leaves the muscle out, `Clear` undoes the pick.
+    Every intensity of the recording is drawn stacked at its own mA, exactly like `waterfall`.
+    Choose the lowest trace that carries a real response: it turns orange and becomes that
+    muscle's threshold. `Take detected` accepts the automatic value, `No response` leaves the
+    muscle out of the analysis.
 
+    mode : "buttons" needs nothing but ipywidgets - the intensity is chosen from a slider, and
+           the figure is redrawn inline. This is the one that works everywhere, VS Code included.
+           "click" additionally lets you click the trace itself, but needs `%matplotlib widget`
+           (ipympl) to be active AND rendering. "auto" (default) uses "click" when the ipympl
+           backend is live and falls back to "buttons" otherwise.
     picks   : a previous session's dict, `picks[channel] = mA or nan`, to resume or correct.
     suggest : {muscle or label: mA} drawn as a green dotted line - the automatic threshold, so
               you can see where the detector put it before overriding it.
 
-    Returns `picks`, mutated live as you click.
+    Returns `picks`, mutated live as you pick.
     """
+    import matplotlib
+    live = ("ipympl" in matplotlib.get_backend().lower()) if mode == "auto" else (mode == "click")
     amps = np.array([m["amp_ma"] for m in meta])
     step = float(np.median(np.diff(np.unique(amps)))) if len(np.unique(amps)) > 1 else 10.0
     pulses = detect_pulses(t, sig["Trigger A"])
@@ -50,18 +57,10 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
                 return suggest[k]
         return None
 
-    state = {"mi": 0}
+    state = {"mi": 0, "mute": False}
+    steps = np.unique(amps)
 
-    fig, ax = plt.subplots(figsize=(9.5, 6.5))
-    try:
-        fig.canvas.header_visible = False
-        fig.canvas.toolbar_position = "right"
-    except Exception:
-        pass
-
-    def draw():
-        m = muscles[state["mi"]]
-        ax.clear()
+    def _plot(ax, m):
         peak = np.percentile(np.abs(sig[m][:, respmask]), 99.5)
         gain = (gain_frac * step) / peak if peak > 0 else 1.0
         cur = picks[m]
@@ -88,39 +87,76 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
                      f"motor threshold = {got}", fontweight="bold")
         ax.set_xlabel("Time (ms)"); ax.set_ylabel("Stim amplitude (mA)")
         ax.grid(True, axis="x", alpha=0.25)
-        fig.canvas.draw_idle()
+
+    # ---- the two ways of getting that figure on screen ---------------------------------
+    out = W.Output()
+    fig = ax = None
+    if live:                       # ipympl: one canvas, redrawn in place, clickable
+        fig, ax = plt.subplots(figsize=(9.5, 6.5))
         try:
-            fig.canvas.flush_events()
+            fig.canvas.header_visible = False
+            fig.canvas.toolbar_position = "right"
         except Exception:
             pass
 
-    def onclick(event):
-        if event.inaxes != ax or event.ydata is None:
-            return
-        picks[muscles[state["mi"]]] = float(np.unique(amps)[
-            int(np.argmin(np.abs(np.unique(amps) - event.ydata)))])
-        draw()
+        def onclick(event):
+            if event.inaxes != ax or event.ydata is None:
+                return
+            _set(float(steps[int(np.argmin(np.abs(steps - event.ydata)))]))
 
-    fig.canvas.mpl_connect("button_press_event", onclick)
+        fig.canvas.mpl_connect("button_press_event", onclick)
 
+    def draw():
+        m = muscles[state["mi"]]
+        if live:
+            ax.clear(); _plot(ax, m)
+            fig.canvas.draw_idle()
+            try:
+                fig.canvas.flush_events()
+            except Exception:
+                pass
+        else:
+            # Redraw into the Output widget WITHOUT pyplot: a pyplot figure is also owned by the
+            # inline backend, which flushes it again at the end of the cell - that is what draws
+            # the picker twice. A bare Figure belongs to nobody, so it appears exactly once.
+            import io
+            from matplotlib.figure import Figure
+            from IPython.display import Image
+            f = Figure(figsize=(9.5, 6.5), layout="constrained")
+            _plot(f.add_subplot(111), m)
+            buf = io.BytesIO()
+            f.savefig(buf, format="png", dpi=100)
+            with out:
+                out.clear_output(wait=True)
+                display(Image(data=buf.getvalue()))
+        cur = picks[m]
+        state["mute"] = True                         # move the slider without re-firing it
+        sl.value = float(cur) if cur == cur else float(steps[0])
+        state["mute"] = False
+
+    # ---- controls (these work with or without ipympl) ----------------------------------
     mdrop = W.Dropdown(options=[(pretty(m), i) for i, m in enumerate(muscles)], value=0,
                        description="Muscle")
+    sl = W.SelectionSlider(options=[(f"{a:g} mA", float(a)) for a in steps], value=float(steps[0]),
+                           description="threshold", continuous_update=False,
+                           style={"description_width": "initial"},
+                           layout=W.Layout(width="520px"))
     b_prev = W.Button(description="◀ Prev"); b_next = W.Button(description="Next ▶")
     b_none = W.Button(description="No response", button_style="warning")
     b_take = W.Button(description="Take detected", button_style="info")
 
+    def _set(v):
+        picks[muscles[state["mi"]]] = v
+        draw()
+
+    def on_slider(ch):
+        if state["mute"] or ch["new"] is None:
+            return
+        _set(float(ch["new"]))
+
     def go(d):
         state["mi"] = int(np.clip(state["mi"] + d, 0, len(muscles) - 1))
         mdrop.value = state["mi"]                    # fires on_muscle, which redraws
-
-    def set_none(_):
-        picks[muscles[state["mi"]]] = np.nan
-        draw()
-
-    def take_detected(_):
-        s = _suggested(muscles[state["mi"]])
-        picks[muscles[state["mi"]]] = float(s) if s else np.nan
-        draw()
 
     def on_muscle(ch):
         if ch["new"] is None:
@@ -128,10 +164,14 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
         state["mi"] = int(ch["new"]); draw()
 
     b_prev.on_click(lambda _: go(-1)); b_next.on_click(lambda _: go(+1))
-    b_none.on_click(set_none); b_take.on_click(take_detected)
+    b_none.on_click(lambda _: _set(np.nan))
+    b_take.on_click(lambda _: _set(float(_suggested(muscles[state["mi"]]) or np.nan)))
+    sl.observe(on_slider, names="value")
     mdrop.observe(on_muscle, names="value")
 
-    display(W.HBox([mdrop, b_prev, b_next, b_take, b_none]))
+    display(W.VBox([W.HBox([mdrop, b_prev, b_next, b_take, b_none]), sl]))
+    if not live:
+        display(out)
     draw()
     return picks
 
