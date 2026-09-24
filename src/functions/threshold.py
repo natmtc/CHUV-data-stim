@@ -9,29 +9,38 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import ipywidgets as W
-from IPython.display import display
+from IPython.display import display, clear_output
 
 from .labels import pretty
 from .io import detect_pulses
 
-# Widgets and figures live in the kernel, not in the cell: re-running the pick cell builds a
-# second set and the frontend shows both. Each call closes the one before it.
-_OPEN = {"widgets": [], "fig": None}
+# Widgets and figures live in the kernel, not in the cell, so re-running the pick cell builds a
+# second set and the frontend shows both. Each call closes the one before it - and the handle on
+# it is kept in the IPython namespace, NOT at module level, because `%autoreload` re-imports this
+# module whenever it changes and would throw a module-level handle away.
+def _open():
+    try:
+        from IPython import get_ipython
+        ns = get_ipython().user_ns
+    except Exception:
+        ns = globals()
+    return ns.setdefault("_tscs_picker_open", {"widgets": [], "fig": None})
 
 
 def _close_previous():
-    for w in _OPEN["widgets"]:
+    reg = _open()
+    for w in reg["widgets"]:
         try:
             w.close()
         except Exception:
             pass
-    _OPEN["widgets"] = []
-    if _OPEN["fig"] is not None:
+    reg["widgets"] = []
+    if reg["fig"] is not None:
         try:
-            plt.close(_OPEN["fig"])
+            plt.close(reg["fig"])
         except Exception:
             pass
-        _OPEN["fig"] = None
+        reg["fig"] = None
 
 
 def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest=None,
@@ -109,11 +118,14 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
 
     # ---- the two ways of getting that figure on screen ---------------------------------
     _close_previous()
-    out = W.Output()
+    # An Image widget, not an Output: the picture is the widget's VALUE, so a redraw swaps it
+    # in place. Output + display() appends, and clear_output has to race the new output - that
+    # is what stacked a second picker under the first on every re-run.
+    img = W.Image(format="png", layout=W.Layout(width="950px"))
     fig = ax = None
     if live:                       # ipympl: one canvas, redrawn in place, clickable
         fig, ax = plt.subplots(figsize=(9.5, 6.5))
-        _OPEN["fig"] = fig
+        _open()["fig"] = fig
         try:
             fig.canvas.header_visible = False
             fig.canvas.toolbar_position = "right"
@@ -137,19 +149,15 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
             except Exception:
                 pass
         else:
-            # Redraw into the Output widget WITHOUT pyplot: a pyplot figure is also owned by the
-            # inline backend, which flushes it again at the end of the cell - that is what draws
-            # the picker twice. A bare Figure belongs to nobody, so it appears exactly once.
+            # A bare Figure, never handed to pyplot: pyplot figures belong to the inline
+            # backend, which draws them again at the end of the cell.
             import io
             from matplotlib.figure import Figure
-            from IPython.display import Image
             f = Figure(figsize=(9.5, 6.5), layout="constrained")
             _plot(f.add_subplot(111), m)
             buf = io.BytesIO()
             f.savefig(buf, format="png", dpi=100)
-            with out:
-                out.clear_output(wait=True)
-                display(Image(data=buf.getvalue()))
+            img.value = buf.getvalue()          # swap the picture, add nothing
         cur = picks[m]
         state["mute"] = True                         # move the slider without re-firing it
         sl.value = float(cur) if cur == cur else float(steps[0])
@@ -191,8 +199,9 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
     mdrop.observe(on_muscle, names="value")
 
     panel = W.VBox([W.HBox([mdrop, b_prev, b_next, b_take, b_none]), sl]
-                   + ([] if live else [out]))
-    _OPEN["widgets"] = [panel, out, sl, mdrop, b_prev, b_next, b_take, b_none]
+                   + ([] if live else [img]))
+    _open()["widgets"] = [panel, img, sl, mdrop, b_prev, b_next, b_take, b_none]
+    clear_output(wait=True)      # drop whatever this cell showed on its last run
     display(panel)
     draw()
     return picks
