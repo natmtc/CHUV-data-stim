@@ -18,17 +18,20 @@ from .io import detect_pulses
 # second set and the frontend shows both. Each call closes the one before it - and the handle on
 # it is kept in the IPython namespace, NOT at module level, because `%autoreload` re-imports this
 # module whenever it changes and would throw a module-level handle away.
-def _open():
+def _open(key):
+    """The widgets a previous call put on screen FOR THIS RECORDING. Keyed, so the eight pick
+    cells each own their own live picker - closing one must not kill the others."""
     try:
         from IPython import get_ipython
         ns = get_ipython().user_ns
     except Exception:
         ns = globals()
-    return ns.setdefault("_tscs_picker_open", {"widgets": [], "fig": None})
+    reg = ns.setdefault("_tscs_picker_open", {})
+    return reg.setdefault(str(key), {"widgets": [], "fig": None})
 
 
-def _close_previous():
-    reg = _open()
+def _close_previous(key):
+    reg = _open(key)
     for w in reg["widgets"]:
         try:
             w.close()
@@ -44,7 +47,7 @@ def _close_previous():
 
 
 def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest=None,
-                     gain_frac=0.9, mode="auto", on_save=None):
+                     gain_frac=0.9, mode="auto", on_save=None, key=None):
     """Pick the motor threshold, one muscle at a time.
 
     Every intensity of the recording is drawn stacked at its own mA, exactly like `waterfall`.
@@ -57,6 +60,8 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
            "click" additionally lets you click the trace itself, but needs `%matplotlib widget`
            (ipympl) to be active AND rendering. "auto" (default) uses "click" when the ipympl
            backend is live and falls back to "buttons" otherwise.
+    key     : identifies this picker, so re-running its cell replaces it and leaves the other
+              recordings' pickers alone. Pass the recording's path.
     on_save : called with `picks` by a Save button next to the controls, so one cell is the
               whole job - open, pick, save. Whatever it returns is shown beside the button.
     picks   : a previous session's dict, `picks[channel] = mA or nan`, to resume or correct.
@@ -119,7 +124,7 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
         ax.grid(True, axis="x", alpha=0.25)
 
     # ---- the two ways of getting that figure on screen ---------------------------------
-    _close_previous()
+    _close_previous(key)
     # An Image widget, not an Output: the picture is the widget's VALUE, so a redraw swaps it
     # in place. Output + display() appends, and clear_output has to race the new output - that
     # is what stacked a second picker under the first on every re-run.
@@ -127,7 +132,7 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
     fig = ax = None
     if live:                       # ipympl: one canvas, redrawn in place, clickable
         fig, ax = plt.subplots(figsize=(9.5, 6.5))
-        _open()["fig"] = fig
+        _open(key)["fig"] = fig
         try:
             fig.canvas.header_visible = False
             fig.canvas.toolbar_position = "right"
@@ -215,7 +220,8 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
     row = [mdrop, b_prev, b_next, b_take, b_none] + ([b_save] if on_save else [])
     panel = W.VBox([W.HBox(row), sl] + ([] if live else [img])
                    + ([W.HBox([status])] if on_save else []))
-    _open()["widgets"] = [panel, img, sl, mdrop, b_prev, b_next, b_take, b_none, b_save, status]
+    _open(key)["widgets"] = [panel, img, sl, mdrop, b_prev, b_next, b_take, b_none,
+                             b_save, status]
     clear_output(wait=True)      # drop whatever this cell showed on its last run
     display(panel)
     draw()
