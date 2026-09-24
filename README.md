@@ -39,6 +39,18 @@ curves. `tSCS_EMG_Burst_vs_ARCex.ipynb` is the comparison that produces the pape
 The **single-pulse** notebooks use a different pipeline: latencies are picked by hand once per
 recording (section 2, run it once and comment the cells again) and stored in `results/`.
 
+Two things are picked by hand, both with the same **A load / B pick / C save** blocks, both saved
+per recording so they survive a re-run:
+
+| picked | notebooks | saved to |
+|---|---|---|
+| response latency, per muscle x intensity | single pulse | `results/latency_<recording>.csv` |
+| motor threshold, per muscle | `Burst_vs_ARCex` | `results/mt_<recording>.csv` |
+
+The threshold picker stacks every intensity of one muscle as a waterfall; you click the lowest
+trace that carries a real response. Where a `mt_*.csv` exists it replaces the detected threshold
+for that recording, so re-run the threshold cell after saving and every figure follows.
+
 All train notebooks share the same peak-detection settings, set in each config cell:
 
 | setting | value | meaning |
