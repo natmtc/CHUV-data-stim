@@ -236,11 +236,15 @@ def depression_stats(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_
 
 def fig_depression(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms=1.0,
                    min_snr=2.0, max_edge_frac=0.5, anchor=None, anchor_win_ms=3.0,
-                   snr_on="median", metric="ratio", title=None, csv_out=None, save=None, resp_end_ms=None):
+                   snr_on="median", metric="ratio", with_p1=False, title=None, csv_out=None,
+                   save=None, resp_end_ms=None):
     """Paper figure: how much the response drops after the first pulse, per condition.
 
-    Left panel  - 2nd pulse vs the 1st.
-    Right panel - mean of pulses 2..N vs the 1st.
+    with_p1     - add a first panel with the 1st pulse itself, in mV. The other two panels are
+                  each condition normalised to ITS OWN pulse 1, so they say how much the train
+                  depresses but nothing about whether one condition responds more strongly than
+                  the other. This panel is what answers that.
+    Then        - 2nd pulse vs the 1st, and the mean of pulses 2..N vs the 1st.
     metric="ratio" -> % of pulse 1 (100 % = no change) · "diff" -> difference in mV.
     Bar = mean over the muscles, whisker = SD, dots = the individual muscles, grey lines join the
     same muscle across conditions. Only muscles responding in every condition are used.
@@ -256,10 +260,17 @@ def fig_depression(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms
     by = {(row["condition"], row["muscle"]): row for row in table}
     names = [pretty(m) for m in kept]
 
-    fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.6), sharey=True)
+    panels = ([("p1_mV", "1st pulse (mV)")] if with_p1 else []) + \
+            [(keyA, "2nd pulse"), (keyB, f"mean of pulses 2–{n_pulses}")]
+    fig = plt.figure(figsize=(5.25 * len(panels), 4.6))
+    axes, base = [], None                    # the ratio panels share a y axis; mV keeps its own
+    for k, (key, _) in enumerate(panels):
+        ax = fig.add_subplot(1, len(panels), k + 1, sharey=base if key != "p1_mV" else None)
+        if key != "p1_mV" and base is None:
+            base = ax
+        axes.append(ax)
     rng = np.random.default_rng(0)
-    for ax, key, ttl in zip(axes, (keyA, keyB),
-                            ("2nd pulse", f"mean of pulses 2–{n_pulses}")):
+    for ax, (key, ttl) in zip(axes, panels):
         pts = []
         for j, (lab, col, hat) in enumerate(zip(labels, colours, hatches)):
             v = np.array([by[(lab, n)][key] for n in names], float)
@@ -273,7 +284,8 @@ def fig_depression(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms
             xs = [p[0][k] for p in pts]; ys = [p[1][k] for p in pts]
             if np.all(np.isfinite(ys)):
                 ax.plot(xs, ys, color="0.72", lw=0.8, zorder=4)
-        ax.axhline(100 if metric == "ratio" else 0, color="0.4", lw=0.9, ls=(0, (2, 3)))
+        if key != "p1_mV":
+            ax.axhline(100 if metric == "ratio" else 0, color="0.4", lw=0.9, ls=(0, (2, 3)))
         ax.set_xticks(range(len(labels)))
         ax.set_xticklabels(labels, fontsize=11)
         ax.set_title(ttl, fontsize=13, fontweight="bold")
@@ -282,12 +294,14 @@ def fig_depression(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms
             ax.spines[sp].set_visible(False)
         for sp in ("left", "bottom"):
             ax.spines[sp].set_color("0.3")
-    axes[0].set_ylabel(ylab, fontsize=12, color="0.2")
-    fig.text(0.5, -0.02, f"bar = mean of {len(names)} muscles, whisker = SD, dots = muscles "
+    axes[0].set_ylabel("1st pulse p2p (mV)" if with_p1 else ylab, fontsize=12, color="0.2")
+    if with_p1:
+        axes[1].set_ylabel(ylab, fontsize=12, color="0.2")
+    fig.text(0.5, 0.012, f"bar = mean of {len(names)} muscles, whisker = SD, dots = muscles "
              f"(grey lines join the same muscle)", ha="center", fontsize=9.5, color="0.45")
-    if title:
-        fig.suptitle(title, fontsize=14, fontweight="bold", y=1.03)
-    fig.tight_layout()
+    if title:                        # keep the title and the caption inside the figure
+        fig.suptitle(title, fontsize=14, fontweight="bold", y=0.985)
+    fig.tight_layout(rect=(0, 0.05, 1, 0.92 if title else 1))
     if save:
         import os
         os.makedirs(os.path.dirname(save), exist_ok=True)
@@ -442,3 +456,114 @@ def fig_thresholds(specs, muscles=None, n_pulses=10, resp_start_ms=8.0, guard_ms
         fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
     plt.show()
     return MT
+
+
+# ---------------------------------------------------------------------------
+# every protocol and polarity in one view: which muscle responds first, and where
+# ---------------------------------------------------------------------------
+def fig_threshold_overview(MT, state="before", modes=("burst", "arcex"),
+                           polarities=("cathodic", "anodic"), names=None, colours=None,
+                           order=("arcex", "cathodic"), drop_empty=True, title=None, save=None):
+    """The whole threshold picture on one page: one row per muscle, one panel per protocol,
+    one marker per polarity at the intensity where that muscle starts responding.
+
+    MT     : {(mode, polarity, state): {muscle: mA}} - the table built by `motor_thresholds`.
+    order  : (mode, polarity) whose thresholds sort the rows, most excitable at the top and the
+             muscles it has no threshold for at the bottom; None keeps alphabetical order.
+
+    Read it this way: WITHIN a panel, the gap between a row's two markers is the cathodic-anodic
+    difference for that muscle, and the spread down the panel is how selective the protocol is.
+    ACROSS panels, compare the ORDER of the muscles, not the mA - 30 Hz and ARC-EX are delivered
+    at different intensities, so their numbers are not on the same scale.
+    """
+    names = names or {"burst": "30 Hz burst", "arcex": "ARC-EX"}
+    colours = colours or {"cathodic": "#1f3b73", "anodic": "#e6550d"}
+    marks = {"cathodic": "o", "anodic": "^"}
+    dodge = {p: (0.17 if i == 0 else -0.17) for i, p in enumerate(polarities)}
+    cols = [(m, p) for m in modes for p in polarities]
+    muscles = sorted({mu for m, p in cols for mu in MT.get((m, p, state), {})})
+    if drop_empty:
+        muscles = [mu for mu in muscles if any(MT.get((m, p, state), {}).get(mu) for m, p in cols)]
+    if order:
+        ref = MT.get((order[0], order[1], state), {})
+        muscles.sort(key=lambda mu: (ref.get(mu) is None, ref.get(mu) or 0, mu))
+    y = {mu: len(muscles) - 1 - i for i, mu in enumerate(muscles)}      # first row on top
+
+    fig, axes = plt.subplots(1, len(modes), figsize=(5.8 * len(modes), 0.46 * len(muscles) + 2.2),
+                             squeeze=False, sharey=True)
+    axes = axes.ravel()
+    for ax, mode in zip(axes, modes):
+        got = {p: MT.get((mode, p, state), {}) for p in polarities}
+        vals = [v for p in polarities for mu in muscles if (v := got[p].get(mu))]
+        hi = max(vals or [1]); lo = min(vals or [0])
+        pad = max(hi - lo, 1) * 0.12
+        x0, x1 = max(lo - pad, 0), hi + pad                  # room for the markers...
+        xlab = x1 + (x1 - x0) * 0.30                         # ...then the value column
+        for mu in muscles:
+            vs = [got[p].get(mu) for p in polarities]
+            ax.axhline(y[mu], color="0.93", lw=0.8, zorder=0)
+            if all(vs):                                      # the polarity gap, as a connector
+                ax.plot(vs, [y[mu] + dodge[p] for p in polarities], "-", color="0.72", lw=2.0,
+                        zorder=1, solid_capstyle="round")
+            for p, v in zip(polarities, vs):
+                if v:
+                    ax.plot(v, y[mu] + dodge[p], marks[p], color=colours[p], ms=9, mew=1.3,
+                            mec="white", zorder=3)
+            ax.annotate(" / ".join(str(v) if v else "\u2013" for v in vs), (xlab, y[mu]),
+                        ha="right", va="center", fontsize=9.5, color="0.45", annotation_clip=False)
+        ax.set_title(names.get(mode, mode), fontsize=13, fontweight="bold", pad=10)
+        ax.set_xlabel("motor threshold (mA)", fontsize=11, color="0.2")
+        ax.set_xlim(x0, xlab + (x1 - x0) * 0.04)
+        ax.set_ylim(-0.75, len(muscles) - 0.25)
+        ax.tick_params(labelsize=10, colors="0.3")
+        ax.tick_params(axis="y", length=0)
+        ax.set_xticks([t for t in ax.get_xticks() if x0 <= t <= x1])   # no ticks under the labels
+        for sp in ("top", "right", "left"):
+            ax.spines[sp].set_visible(False)
+        ax.spines["bottom"].set_bounds(x0, x1); ax.spines["bottom"].set_color("0.3")
+    axes[0].set_yticks([y[mu] for mu in muscles], muscles, fontsize=11)
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], ls="", marker=marks[p], color=colours[p], ms=9, mew=1.3,
+                      mec="white", label=p) for p in polarities]
+    handles.append(Line2D([], [], color="0.72", lw=2.0,
+                          label=" \u2013 ".join(polarities) + " gap   (labels: "
+                                + " / ".join(polarities) + " mA)"))
+    fig.legend(handles=handles, loc="upper center", ncol=len(handles), fontsize=11,
+               frameon=False, bbox_to_anchor=(0.5, 1.0))
+    if title:
+        fig.suptitle(title, fontsize=14, fontweight="bold", y=1.06)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    if save:
+        import os
+        os.makedirs(os.path.dirname(save), exist_ok=True)
+        fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+    plt.show()
+    return muscles
+
+
+def step_up(mt, csv, steps=1, missing="drop", verbose=True, label=""):
+    """Move every motor threshold `steps` intensities UP the ladder that recording actually
+    contains, so the analysis sits on a clear response instead of the smallest one the
+    criterion accepts. steps=0 returns the thresholds unchanged.
+
+    mt      : {muscle: mA} for ONE recording - one column of the `motor_thresholds` table.
+    missing : what to do when there is no such intensity, i.e. the threshold is already the
+              highest one tested - "drop" leaves that muscle out, "clip" keeps it at the top.
+    """
+    amps = sorted({m["amp_ma"] for m in load_run(csv)[0]})
+    out, short = {}, []
+    for m, v in mt.items():
+        if not v or v not in amps:
+            continue
+        i = amps.index(v) + steps
+        if i < len(amps):
+            out[m] = amps[i]
+        else:
+            short.append(m)
+            if missing == "clip":
+                out[m] = amps[-1]
+    if verbose and short:
+        what = "kept at the highest tested" if missing == "clip" else "left out"
+        print(f"  {label or csv.split('/')[-1]}: threshold is already the highest intensity for "
+              + ", ".join(sorted(short)) + f" - {what}")
+    return out
