@@ -1,6 +1,7 @@
 # raw EMG recordings - not in the repo
 tSCS_CHUV_data/
 # local cruft
+.venv/
 .DS_Store
 __pycache__/
 .ipynb_checkpoints/
