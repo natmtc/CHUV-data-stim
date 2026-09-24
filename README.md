@@ -49,7 +49,8 @@ per recording so they survive a re-run:
 
 The threshold picker stacks every intensity of one muscle as a waterfall; a slider sets the
 threshold to the lowest trace that carries a real response (no `%matplotlib widget` needed, so it
-works in VS Code too). Where a `mt_*.csv` exists it replaces the detected threshold
+works in VS Code too). Every muscle is then analysed **at** its threshold - the trace you pick is
+the trace the figures are drawn from (`MT_STEPS` can step above it instead). Where a `mt_*.csv` exists it replaces the detected threshold
 for that recording, so re-run the threshold cell after saving and every figure follows.
 
 All train notebooks share the same peak-detection settings, set in each config cell:
