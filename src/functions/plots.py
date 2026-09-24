@@ -7,13 +7,24 @@ from .io import detect_stim, detect_pulses
 
 
 def waterfall(meta, t, sig, muscles, xlim=(-20, 80), gain_frac=0.9, gains=None, title=None,
-              save=None):
+              highlight=None, highlight_label="analysed", save=None):
     """Per-muscle waterfall: one trace per intensity, stacked at its amplitude (mA).
+
+    highlight : the intensity the ANALYSIS uses - one mA for every muscle, or a {muscle: mA}
+                dict (e.g. each muscle's motor threshold). That trace is drawn in orange and
+                labelled, so it is obvious which sweep the numbers come from.
 
     Returns the {muscle: gain} actually used. Pass that dict back in as `gains=` for a
     second recording so BOTH figures are drawn at the same scale - otherwise each file
     is auto-scaled to itself and the two are not comparable (e.g. before vs lidocaine).
     """
+    def _hl(m):                      # the highlighted mA of one muscle, if any
+        if not isinstance(highlight, dict):
+            return highlight
+        for k in (m, pretty(m)):
+            if k in highlight:
+                return highlight[k]
+        return highlight.get("default")
     amps = np.array([m["amp_ma"] for m in meta])
     step = np.median(np.diff(np.unique(amps))) if len(np.unique(amps)) > 1 else 10
     tmask = (t >= xlim[0]) & (t <= xlim[1])
@@ -42,8 +53,16 @@ def waterfall(meta, t, sig, muscles, xlim=(-20, 80), gain_frac=0.9, gains=None, 
             peak = np.percentile(np.abs(sig[m][:, respmask]), 99.5)
             gain = (gain_frac * step) / peak if peak > 0 else 1.0
         used[m] = gain
+        hl = _hl(m)
         for w in range(len(amps)):
-            ax.plot(t[tmask], data[w] * gain + amps[w], color="#1f3b73", lw=0.9)
+            on = hl is not None and amps[w] == hl
+            ax.plot(t[tmask], data[w] * gain + amps[w], color="#e6550d" if on else "#1f3b73",
+                    lw=2.0 if on else 0.9, alpha=1.0 if on else 0.7, zorder=5 if on else 2)
+        if hl is not None and hl in amps:
+            ax.annotate(f"{highlight_label} \u2014 {hl} mA", (xlim[1], hl), xytext=(-4, 7),
+                        textcoords="offset points", ha="right", va="bottom", fontsize=9,
+                        color="#e6550d", fontweight="bold", zorder=6,
+                        bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.85))
         for a0, a1 in pulses:                       # one band per pulse of the train
             if a1 >= xlim[0] and a0 <= xlim[1]:
                 ax.axvspan(a0, a1, color="red", alpha=0.10, zorder=0)
@@ -61,10 +80,9 @@ def waterfall(meta, t, sig, muscles, xlim=(-20, 80), gain_frac=0.9, gains=None, 
             ax.set_xlabel("Time (ms)")
     for k in range(n, len(axes)):
         axes[k].axis("off")
-    fig.tight_layout()
-    if title:
-        fig.suptitle(title, fontsize=15, fontweight="bold", y=1.0)
-        fig.subplots_adjust(top=0.93)
+    if title:                       # reserve the strip the title needs, then lay out into it
+        fig.suptitle(title, fontsize=15, fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 1 - (0.5 / (panel_h * nrow)) if title else 1))
     if save:
         import os
         os.makedirs(os.path.dirname(save), exist_ok=True)

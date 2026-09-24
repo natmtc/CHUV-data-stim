@@ -771,9 +771,14 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
     n = len(muscles); ncol = min(ncol, n); nrow = int(np.ceil(n / ncol))
     single = (n == 1)
     pw = 6.2 if ncol > 1 else 12.0                       # a single muscle gets a wide panel
-    fig = plt.figure(figsize=(pw * ncol, (7.5 if single else 6.4) * nrow))
+    fig_h = (7.5 if single else 6.4) * nrow
+    fig = plt.figure(figsize=(pw * ncol, fig_h))
+    lg_ncol = len(runs) if pw * ncol >= 4.2 * len(runs) else 2      # else the legend runs off
+    lg_rows = int(np.ceil(len(runs) / lg_ncol))
+    band = ((1.5 if single else 1.45) + 0.3 * (lg_rows - 1)) / fig_h   # inches kept clear for the
+                                        # figure title, the legend and the panel titles under it
     outer = fig.add_gridspec(nrow, ncol, hspace=0.45, wspace=0.28,
-                             top=(0.88 if single else 0.965), bottom=(0.07 if single else 0.03))
+                             top=1 - band, bottom=(0.07 if single else 0.03))
     bad = [clipped_channels(r["sig"], muscles) for r in runs]
     for i, m in enumerate(muscles):
         inner = GridSpecFromSubplotSpec(3, 1, subplot_spec=outer[i // ncol, i % ncol],
@@ -807,14 +812,17 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
             pad = 0.25 * (hi - lo) or 0.01
             ax_t.set_ylim(lo - pad, hi + pad)
         ax_t.set_xlim(*xlim)
-        if any(isinstance(r["amp_sel"], dict) for r in runs):   # per-muscle mA: write them out
+        per_muscle_ma = any(isinstance(r["amp_sel"], dict) for r in runs)
+        if per_muscle_ma:      # each condition's own mA, in legend order, on their own line
+            txts = [f"{r['res']['amps'][r['w'][m]]} mA" for r in runs]
+            step = 0.03 + 0.022 * max(len(x) for x in txts)      # keep them from colliding
             x_t = 1.0
-            for r, col in zip(reversed(runs), reversed(colours)):
-                ma = r["res"]["amps"][r["w"][m]]
-                ax_t.annotate(f"{ma} mA", (x_t, 1.0), xycoords="axes fraction", ha="right",
+            for txt, col in zip(reversed(txts), reversed(colours)):
+                ax_t.annotate(txt, (x_t, 1.0), xycoords="axes fraction", ha="right",
                               va="bottom", fontsize=9.5, color=col, fontweight="bold")
-                x_t -= 0.085
-        ax_t.set_title("EMG traces  (v = max, ^ = min used for each pulse)" if single else pretty(m),
+                x_t -= step
+        ax_t.set_title(("EMG traces  (v = max, ^ = min used for each pulse)" if single
+                        else pretty(m)) + ("\n" if per_muscle_ma else ""),
                        fontweight="bold", fontsize=(12 if single else None))
         for j, (b, col) in enumerate(zip(bad, colours)):
             if m in b:
@@ -885,16 +893,14 @@ def compare_at_intensity(csv_before, csv_after, amp, n_pulses=10, resp_start_ms=
     handles = [Patch(facecolor=c, hatch=h, edgecolor=("white" if h else "none"),
                      label=f"{l} ({_amp_label(a)})")
                for l, a, c, h in zip(labels, amp_pair, colours, hatches)]
-    if single:                      # title + legend in their own band above the panels
-        if title:
-            fig.suptitle(title, fontsize=16, fontweight="bold", y=0.985)
-        fig.legend(handles=handles, loc="upper center", ncol=len(handles), fontsize=12,
-                   frameon=False, bbox_to_anchor=(0.5, 0.955))
-    else:
-        if title:
-            fig.text(0.01, 0.995, title, ha="left", va="top", fontsize=15, fontweight="bold")
-        fig.legend(handles=handles, loc="upper center", ncol=len(handles), fontsize=12,
-                   frameon=True, framealpha=0.9, bbox_to_anchor=(0.5, 0.995))
+    ytop = 1 - 0.12 / fig_h         # title on one line, legend under it, panels under that
+    if title:
+        if single:
+            fig.suptitle(title, fontsize=16, fontweight="bold", y=ytop)
+        else:
+            fig.text(0.01, ytop, title, ha="left", va="top", fontsize=15, fontweight="bold")
+    fig.legend(handles=handles, loc="upper center", ncol=lg_ncol, fontsize=12,
+               frameon=False, bbox_to_anchor=(0.5, ytop - (0.42 if title else 0.06) / fig_h))
     if save:
         os.makedirs(os.path.dirname(save), exist_ok=True)
         fig.savefig(save, dpi=150, bbox_inches="tight"); print("saved", save)
