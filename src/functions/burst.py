@@ -109,7 +109,10 @@ def _anchored_extrema(rel, segs, ref_idx, win_ms):
     """Latency (in `rel`) of the max and of the min of the REFERENCE waveform, then, for every
     pulse, the max/min taken only within +-win_ms of those latencies. Returns (i_hi, i_lo) index
     arrays into each segment. `segs` is [n_pulses, n_samples] on the common grid `rel`."""
-    ref = np.nanmean(segs[ref_idx], axis=0)
+    import warnings as _w
+    with _w.catch_warnings():        # a dropout leaves whole samples NaN across every pulse
+        _w.simplefilter("ignore", RuntimeWarning)
+        ref = np.nanmean(segs[ref_idx], axis=0)
     t_hi, t_lo = rel[int(np.nanargmax(ref))], rel[int(np.nanargmin(ref))]
     hi_win = np.abs(rel - t_hi) <= win_ms
     lo_win = np.abs(rel - t_lo) <= win_ms
