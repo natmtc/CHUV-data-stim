@@ -385,7 +385,7 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
 # 6. one muscle, the participants side by side: how big, and how it holds up
 # ---------------------------------------------------------------------------
 def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, colours=None,
-             names=None, title=None, save=None, **kw):
+             names=None, min_snr_ratio=3.0, title=None, save=None, **kw):
     """One muscle, one figure: participants side by side, a bar per protocol.
 
     Left   - the 1st pulse as a multiple of that recording's own baseline noise. NOT in mV:
@@ -395,6 +395,9 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
     Right  - the mean of pulses 2..N as % of the 1st.
 
     Each muscle is taken at ITS own motor threshold in that recording, `steps` intensities up.
+    The two ratio panels divide by the 1st pulse, so a small 1st pulse makes them explode or
+    collapse: a bar whose 1st pulse is under `min_snr_ratio` x its noise is left out of those two
+    panels and listed underneath, rather than drawn as if it meant something.
     runs : {(subject, protocol): csv}      MT : {(subject, protocol): {muscle: mA}}
     Returns the numbers behind the bars.
     """
@@ -438,14 +441,16 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
             val[(s, p)] = dict(amp=amp, snr=(p1 / b if b > 0 else np.nan),
                                p2=100 * float(y[1]) / p1, rest=100 * rest / p1, p1_mV=p1)
 
-    panels = [("snr", "1st pulse  (x its own baseline noise)", None),
+    panels = [("snr", "1st pulse  (x its own baseline noise, log)", None),
               ("p2", "2nd pulse  (% of the 1st)", 100),
               ("rest", "mean of pulses 2-10  (% of the 1st)", 100)]
     fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.2))
     x = np.arange(len(subjects)); w = 0.8 / len(protocols)
     for ax, (key, ttl, line) in zip(axes, panels):
         for j, p in enumerate(protocols):
-            h = [val.get((s, p), {}).get(key, np.nan) for s in subjects]
+            h = [val.get((s, p), {}).get(key, np.nan) if
+                 (key == "snr" or val.get((s, p), {}).get("snr", 0) >= min_snr_ratio)
+                 else np.nan for s in subjects]
             ax.bar(x + (j - (len(protocols) - 1) / 2) * w, h, width=w * 0.9,
                    facecolor=colours[p], alpha=0.85, hatch=hatch[p],
                    edgecolor=("white" if hatch[p] else "none"), lw=0, zorder=2,
@@ -454,6 +459,12 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
                 if np.isfinite(v):
                     ax.annotate(f"{v:.0f}", (xi, v), textcoords="offset points", xytext=(0, 3),
                                 ha="center", fontsize=8.5, color="0.35")
+        if key == "snr":
+            # one participant can be 10x another here, which flattens the rest on a linear
+            # axis; log keeps every bar readable and puts the noise floor at 1
+            ax.set_yscale("log")
+            ax.axhline(1, color="0.4", lw=0.9, ls=(0, (2, 3)), zorder=1)
+            ax.set_ylim(bottom=0.9)
         if line:
             ax.axhline(line, color="0.4", lw=0.9, ls=(0, (2, 3)), zorder=1)
         ax.set_xticks(x, subjects, fontsize=11)
@@ -463,8 +474,14 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
         for sp in ("top", "right"):
             ax.spines[sp].set_visible(False)
     axes[0].legend(frameon=False, fontsize=10, loc="upper left")
+    weak = [f"{s} {names.get(p, p)}" for (s, p), v in sorted(val.items())
+            if v["snr"] < min_snr_ratio]
     at = ", ".join(f"{s} {names.get(p, p)} {v['amp']:g} mA"
                    for (s, p), v in sorted(val.items()))
+    if weak:
+        fig.text(0.5, -0.085, "1st pulse under "
+                 f"{min_snr_ratio:g}x noise, so the ratio panels are left blank: "
+                 + ", ".join(weak), ha="center", fontsize=9, color="#d62728")
     fig.text(0.5, -0.03, "each at its own motor threshold"
              + (f" + {steps} step" if steps else "") + ":  " + at,
              ha="center", fontsize=9, color="0.45")
