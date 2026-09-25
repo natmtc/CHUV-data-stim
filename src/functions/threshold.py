@@ -294,3 +294,28 @@ def load_threshold_csv(csv_path, by="muscle"):
         return {c: (float(v) if pd.notna(v) else float("nan"))
                 for c, v in zip(df["channel"], df["mt_ma"])}
     return {m: float(v) for m, v in zip(df["muscle"], df["mt_ma"]) if pd.notna(v)}
+
+
+def thresholds_for(csv_path, muscles=None, consecutive=2, detect=True, **kw):
+    """The motor thresholds to use for one recording: `{muscle: mA}`.
+
+    The hand-picked file wins wherever it exists - that is the whole point of picking them once,
+    in notebooks/motor_thresholds/, and reading them everywhere else. Otherwise they are detected
+    from the response criterion (`detect=False` returns {} instead, if you would rather a missing
+    pick was obvious than silently replaced).
+
+    `threshold_source(csv)` says which of the two you got.
+    """
+    f = mt_file(csv_path)
+    if os.path.exists(f):
+        return load_threshold_csv(f)
+    if not detect:
+        return {}
+    from .paper import motor_thresholds          # imported here: paper imports burst imports io
+    return motor_thresholds([dict(label="_", csv=csv_path)], muscles, consecutive=consecutive,
+                            verbose=False, **kw)["_"]
+
+
+def threshold_source(csv_path):
+    """"hand-picked" if this recording has a saved mt_*.csv, else "detected"."""
+    return "hand-picked" if os.path.exists(mt_file(csv_path)) else "detected"

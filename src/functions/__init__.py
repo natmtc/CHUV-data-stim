@@ -4,7 +4,8 @@ from .labels import LABELS, pretty
 from .io import load_run, detect_stim, detect_pulses
 from .plots import waterfall, waterfall_overlay, plot_latency
 from .latency import latency_picker, save_latency_csv, load_latency_csv
-from .threshold import (threshold_picker, save_threshold_csv, load_threshold_csv, mt_file)
+from .threshold import (threshold_picker, save_threshold_csv, load_threshold_csv,
+                        mt_file, thresholds_for, threshold_source)
 from .across import (recruitment, fig_threshold_ratio, fig_recruitment,
                      fig_selectivity, fig_muscle_grid)
 from .burst import (burst_p2p, normalize_burst, artifact_extent, clipped_channels,
@@ -21,6 +22,7 @@ __all__ = [
     "waterfall", "waterfall_overlay", "plot_latency",
     "latency_picker", "save_latency_csv", "load_latency_csv",
     "threshold_picker", "save_threshold_csv", "load_threshold_csv", "mt_file",
+    "thresholds_for", "threshold_source",
     "recruitment", "fig_threshold_ratio", "fig_recruitment", "fig_selectivity",
     "fig_muscle_grid",
     "burst_p2p", "normalize_burst", "artifact_extent", "clipped_channels",

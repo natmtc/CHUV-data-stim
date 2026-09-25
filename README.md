@@ -16,6 +16,7 @@ notebooks/P04_2026-07-16_tendon_vibration/  P04, vibration on/off       + P04_20
 notebooks/P04_2026-07-17_lidocaine/         P04, before/with lidocaine  + P04_2026-07-17_lidocaine.xlsx
 notebooks/NTA_2026-07-24_polarity_lidocaine/ NTA, cathodic vs anodic x lidocaine
                                                                         + NTA_2026-07-24_polarity_lidocaine.xlsx
+notebooks/motor_thresholds/                 pick the thresholds ONCE, for every recording
 notebooks/across_participants/              P03 + P04 + NTA, baseline 30 Hz vs ARC-EX
 
 P03_2026-07-03_lidocaine.xlsx is a P03 lidocaine session (baseline anodic/cathodic, then post
@@ -81,6 +82,20 @@ All train notebooks share the same peak-detection settings, set in each config c
 | `JITTER_MS` | 0.5 | flag a pulse whose latency differs from the train median |
 
 Change them in one notebook and the others no longer agree - keep them in step.
+
+## Motor thresholds
+
+Picked by hand once, in `notebooks/motor_thresholds/`, and read everywhere else:
+
+```python
+from functions import thresholds_for, threshold_source
+thresholds_for(recording)     # {muscle: mA} - the saved pick if there is one, else detected
+threshold_source(recording)   # "hand-picked" or "detected"
+```
+
+A pick is saved per recording as `results/<participant-session>/mt_<recording>.csv`, so the
+picking notebook and every analysis agree without anything being typed twice. Run `status()` there
+to see which recordings are still on automatic detection.
 
 ## Where derived files go
 
