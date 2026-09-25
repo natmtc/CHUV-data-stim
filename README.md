@@ -85,6 +85,12 @@ Change them in one notebook and the others no longer agree - keep them in step.
 
 ## Motor thresholds
 
+**The intensity rule for the whole project: every muscle is analysed AT the threshold picked for
+it.** The trace chosen in the picker is the trace the numbers come from - never one mA for the
+whole arm, never a step above (`MT_STEPS = 0` everywhere). A notebook's `AMP_MT` is only the
+single sweep its *diagnostic* figures inspect, derived from those picks rather than typed from
+the session log.
+
 Picked by hand once, in `notebooks/motor_thresholds/`, and read everywhere else:
 
 ```python
