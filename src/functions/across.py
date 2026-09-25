@@ -314,10 +314,13 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
             for m in muscles if curves.get((s, p), {}).get(m) is not None]
     if not have:
         raise ValueError("none of those muscles has a curve in any recording")
+    # Normalise every curve to its response AT THRESHOLD - a point every recording has by
+    # definition - and then let each run as far as its own sweep went. Truncating everyone to
+    # the shortest sweep put the whole figure below threshold, where there is nothing to see.
     reach = {(s, p, m): float(np.nanmax(curves[(s, p)][m][0])) for s, p, m in have}
-    lim = min(reach, key=reach.get)
-    xmax = ref or reach[lim]
-    grid = np.linspace(0, xmax, 60)
+    at_x = ref or 1.0
+    xmax = max(reach.values())
+    grid = np.linspace(0, xmax, 90)
 
     fig, axes = plt.subplots(1, len(protocols), figsize=(5.6 * len(protocols), 4.6),
                              squeeze=False, sharey=True)
@@ -333,7 +336,7 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
                 x, y = xy
                 k = np.argsort(x)
                 yi = np.interp(grid, x[k], y[k], left=np.nan, right=np.nan)
-                at = np.interp(xmax, x[k], y[k])
+                at = np.interp(at_x, x[k], y[k])
                 if np.isfinite(at) and at > 0:
                     ys.append(100.0 * yi / at)
             if not ys:
@@ -343,12 +346,19 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
             with _w.catch_warnings():        # the low end of the grid is below some ladders
                 _w.simplefilter("ignore", RuntimeWarning)
                 mu, sd = np.nanmean(a, axis=0), np.nanstd(a, axis=0)
+            # only draw where EVERY muscle contributes, so "mean of N muscles" stays true -
+            # otherwise the line quietly becomes one muscle where the others ran out
+            full = np.sum(np.isfinite(a), axis=0) == len(ys)
+            mu = np.where(full, mu, np.nan); sd = np.where(full, sd, np.nan)
             out[(s, p)] = (len(ys), float(mu[-1]))
             ax.plot(grid, mu, "-", color=colours[s], lw=2.6, zorder=3, label=s)
             if band and len(ys) > 1:
                 ax.fill_between(grid, mu - sd, mu + sd, color=colours[s], alpha=0.14, lw=0,
                                 zorder=2)
-        ax.axvline(1.0, color="0.55", ls=":", lw=1.3, zorder=1)
+        ax.axvline(at_x, color="0.45", ls="--", lw=1.4, zorder=1)
+        ax.annotate("threshold", (at_x, 0.98), xycoords=("data", "axes fraction"), ha="center",
+                    va="top", fontsize=9.5, color="0.45",
+                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.85))
         ax.axhline(100, color="0.85", lw=0.9, zorder=0)
         ax.set_title(names.get(p, p), fontsize=13, fontweight="bold")
         ax.set_xlabel("intensity (x motor threshold)", fontsize=11, color="0.2")
@@ -357,12 +367,12 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
                                                                                 colors="0.3")
         for sp in ("top", "right"):
             ax.spines[sp].set_visible(False)
-    axes[0].set_ylabel(f"% of response at {xmax:.2f} x MT", fontsize=11.5, color="0.25")
+    axes[0].set_ylabel("% of the response at threshold", fontsize=12, color="0.25")
     h, l = axes[0].get_legend_handles_labels()
     fig.legend(h, l, loc="upper center", ncol=len(subjects), frameon=False, fontsize=12,
                bbox_to_anchor=(0.5, 0.995))
-    fig.text(0.5, -0.02, f"line = mean of {len(muscles)} muscles, band = SD",
-             ha="center", fontsize=9.5, color="0.45")
+    fig.text(0.5, -0.02, f"line = mean of all {len(muscles)} muscles (drawn only where every one "
+             f"of them reaches), band = SD", ha="center", fontsize=9.5, color="0.45")
     if title:
         fig.suptitle(title, fontsize=15, fontweight="bold", y=1.10)
     fig.tight_layout(rect=(0, 0, 1, 0.92))
@@ -371,15 +381,15 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
         os.makedirs(os.path.dirname(save), exist_ok=True)
         fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
     plt.show()
-    print(f"common reference: {xmax:.2f} x MT  (the furthest EVERY recording reaches)")
-    if ref is None:
-        print(f"  set by {lim[0]} {names.get(lim[1], lim[1])} {lim[2]} - its sweep stops there")
-        short = {f"{s} {names.get(p, p)}": round(min(reach[(s, p, m)] for m in muscles
-                                                     if (s, p, m) in reach), 2)
-                 for s in subjects for p in protocols
-                 if any((s, p, m) in reach for m in muscles)}
-        print("  each recording reaches: " + ", ".join(f"{k} {v}x" for k, v in short.items()))
-    return xmax, out
+    print(f"every curve = 100 % at its own threshold ({at_x:g} x MT); each runs as far as its "
+          f"sweep went:")
+    for s_ in subjects:
+        for p_ in protocols:
+            got = [reach[(s_, p_, m)] for m in muscles if (s_, p_, m) in reach]
+            if got:
+                print(f"   {s_:5s} {names.get(p_, p_):12s} up to {min(got):.2f} x MT"
+                      + ("   <- nothing above threshold" if min(got) <= 1.01 else ""))
+    return at_x, out
 
 
 # ---------------------------------------------------------------------------
