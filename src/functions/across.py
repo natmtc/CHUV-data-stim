@@ -344,8 +344,7 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
                 _w.simplefilter("ignore", RuntimeWarning)
                 mu, sd = np.nanmean(a, axis=0), np.nanstd(a, axis=0)
             out[(s, p)] = (len(ys), float(mu[-1]))
-            ax.plot(grid, mu, "-", color=colours[s], lw=2.2, zorder=3,
-                    label=f"{s}  (n={len(ys)})")
+            ax.plot(grid, mu, "-", color=colours[s], lw=2.6, zorder=3, label=s)
             if band and len(ys) > 1:
                 ax.fill_between(grid, mu - sd, mu + sd, color=colours[s], alpha=0.14, lw=0,
                                 zorder=2)
@@ -358,13 +357,15 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
                                                                                 colors="0.3")
         for sp in ("top", "right"):
             ax.spines[sp].set_visible(False)
-        ax.legend(frameon=False, fontsize=10, loc="upper left")
-    axes[0].set_ylabel(f"response (% of its value at {xmax:.2f} x MT)", fontsize=11, color="0.2")
-    fig.text(0.5, -0.02, f"line = mean of {len(muscles)} muscles, band = SD across them; "
-             f"the dotted line is motor threshold", ha="center", fontsize=9.5, color="0.45")
+    axes[0].set_ylabel(f"% of response at {xmax:.2f} x MT", fontsize=11.5, color="0.25")
+    h, l = axes[0].get_legend_handles_labels()
+    fig.legend(h, l, loc="upper center", ncol=len(subjects), frameon=False, fontsize=12,
+               bbox_to_anchor=(0.5, 0.995))
+    fig.text(0.5, -0.02, f"line = mean of {len(muscles)} muscles, band = SD",
+             ha="center", fontsize=9.5, color="0.45")
     if title:
-        fig.suptitle(title, fontsize=14, fontweight="bold", y=1.02)
-    fig.tight_layout()
+        fig.suptitle(title, fontsize=15, fontweight="bold", y=1.10)
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
     if save:
         import os
         os.makedirs(os.path.dirname(save), exist_ok=True)
@@ -441,12 +442,12 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
             val[(s, p)] = dict(amp=amp, snr=(p1 / b if b > 0 else np.nan),
                                p2=100 * float(y[1]) / p1, rest=100 * rest / p1, p1_mV=p1)
 
-    panels = [("snr", "1st pulse  (x its own baseline noise, log)", None),
-              ("p2", "2nd pulse  (% of the 1st)", 100),
-              ("rest", "mean of pulses 2-10  (% of the 1st)", 100)]
-    fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.2))
+    panels = [("snr", "1st pulse", "x baseline noise", None),
+              ("p2", "2nd pulse", "% of 1st pulse", 100),
+              ("rest", "mean of pulses 2-10", "% of 1st pulse", 100)]
+    fig, axes = plt.subplots(1, 3, figsize=(12.6, 4.4))
     x = np.arange(len(subjects)); w = 0.8 / len(protocols)
-    for ax, (key, ttl, line) in zip(axes, panels):
+    for ax, (key, ttl, ylab, line) in zip(axes, panels):
         for j, p in enumerate(protocols):
             h = [val.get((s, p), {}).get(key, np.nan) if
                  (key == "snr" or val.get((s, p), {}).get("snr", 0) >= min_snr_ratio)
@@ -467,26 +468,23 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
             ax.set_ylim(bottom=0.9)
         if line:
             ax.axhline(line, color="0.4", lw=0.9, ls=(0, (2, 3)), zorder=1)
-        ax.set_xticks(x, subjects, fontsize=11)
-        ax.set_title(ttl, fontsize=11.5, fontweight="bold")
+        ax.set_xticks(x, subjects, fontsize=12)
+        ax.set_title(ttl, fontsize=13, fontweight="bold")
+        ax.set_ylabel(ylab, fontsize=11, color="0.25")
         ax.tick_params(labelsize=10, colors="0.3")
         ax.grid(True, axis="y", alpha=0.22); ax.set_axisbelow(True)
         for sp in ("top", "right"):
             ax.spines[sp].set_visible(False)
-    axes[0].legend(frameon=False, fontsize=10, loc="upper left")
+    handles, labels_ = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels_, loc="upper center", ncol=len(protocols), frameon=False,
+               fontsize=12, bbox_to_anchor=(0.5, 0.995))
     weak = [f"{s} {names.get(p, p)}" for (s, p), v in sorted(val.items())
             if v["snr"] < min_snr_ratio]
-    at = ", ".join(f"{s} {names.get(p, p)} {v['amp']:g} mA"
-                   for (s, p), v in sorted(val.items()))
     if weak:
-        fig.text(0.5, -0.085, "1st pulse under "
-                 f"{min_snr_ratio:g}x noise, so the ratio panels are left blank: "
-                 + ", ".join(weak), ha="center", fontsize=9, color="#d62728")
-    fig.text(0.5, -0.03, "each at its own motor threshold"
-             + (f" + {steps} step" if steps else "") + ":  " + at,
-             ha="center", fontsize=9, color="0.45")
-    fig.suptitle(title or muscle, fontsize=14, fontweight="bold", y=1.03)
-    fig.tight_layout()
+        fig.text(0.5, -0.02, "blank = 1st pulse too close to noise to divide by  ("
+                 + ", ".join(weak) + ")", ha="center", fontsize=9.5, color="#d62728")
+    fig.suptitle(title or muscle, fontsize=15, fontweight="bold", y=1.10)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     if save:
         import os
         os.makedirs(os.path.dirname(save), exist_ok=True)

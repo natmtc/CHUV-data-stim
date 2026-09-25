@@ -1,0 +1,10 @@
+source_file,muscle,channel,mt_ma,electrode,mode
+Burst_autosave_20260715_170629_569ms,Thenar (L),L_The_ED_FD_FCR A,60.0,2,monophasic
+Burst_autosave_20260715_170629_569ms,Ext. digitorum (L),L_The_ED_FD_FCR B,30.0,2,monophasic
+Burst_autosave_20260715_170629_569ms,Flex. digitorum (L),L_The_ED_FD_FCR C,40.0,2,monophasic
+Burst_autosave_20260715_170629_569ms,Flex. carpi rad. (L),L_The_ED_FD_FCR D,40.0,2,monophasic
+Burst_autosave_20260715_170629_569ms,Trapezius (R),R_TR,,2,monophasic
+Burst_autosave_20260715_170629_569ms,Thenar (R),R_The_ED_FD_FCR A,50.0,2,monophasic
+Burst_autosave_20260715_170629_569ms,Ext. digitorum (R),R_The_ED_FD_FCR B,50.0,2,monophasic
+Burst_autosave_20260715_170629_569ms,Flex. digitorum (R),R_The_ED_FD_FCR C,50.0,2,monophasic
+Burst_autosave_20260715_170629_569ms,Flex. carpi rad. (R),R_The_ED_FD_FCR D,50.0,2,monophasic
