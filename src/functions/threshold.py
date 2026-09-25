@@ -319,3 +319,20 @@ def thresholds_for(csv_path, muscles=None, consecutive=2, detect=True, **kw):
 def threshold_source(csv_path):
     """"hand-picked" if this recording has a saved mt_*.csv, else "detected"."""
     return "hand-picked" if os.path.exists(mt_file(csv_path)) else "detected"
+
+
+def typical_threshold(csv_path, muscles=None, consecutive=2, **kw):
+    """One intensity that stands for a recording's per-muscle thresholds: their median, snapped
+    to an intensity the recording actually contains.
+
+    The diagnostic views - the pulse overlay, the detection report - inspect ONE sweep, so they
+    need a single number. This is that number, taken from the hand-picked thresholds instead of
+    typed from the session log. Returns None if the recording has no threshold at all.
+    """
+    from .io import load_run
+    got = [v for v in thresholds_for(csv_path, muscles, consecutive, **kw).values() if v]
+    if not got:
+        return None
+    amps = sorted({m["amp_ma"] for m in load_run(csv_path)[0]})
+    mid = float(np.median(got))
+    return min(amps, key=lambda a: abs(a - mid))

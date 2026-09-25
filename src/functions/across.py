@@ -289,3 +289,190 @@ def fig_muscle_grid(curves, MT, muscles, subjects, protocols=("burst", "arcex"),
         os.makedirs(os.path.dirname(save), exist_ok=True)
         fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
     plt.show()
+
+
+# ---------------------------------------------------------------------------
+# 5. the three participants in ONE plot
+# ---------------------------------------------------------------------------
+def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"), colours=None,
+                        names=None, ref=None, band=True, title=None, save=None):
+    """One panel per protocol, one line per participant: the muscles averaged.
+
+    The problem this solves: "% of its own max" makes every curve's reference the top of its own
+    sweep, and the sweeps do not go equally far - one participant's 100 % can be a saturated
+    response and another's a barely supra-threshold one. Here every curve is put on a common
+    x grid that ALL the recordings reach, and normalised to its own response AT THAT POINT, so
+    100 % means the same thing everywhere. `ref` overrides that shared endpoint (in x MT).
+
+    Line = mean over `muscles`, band = +-SD across them, colour = participant.
+    Returns the reference used and the per-subject values at it.
+    """
+    names = names or {"burst": "30 Hz burst", "arcex": "ARC-EX"}
+    colours = colours or dict(zip(subjects, ["#1f3b73", "#e6550d", "#2ca25f", "#9467bd"]))
+
+    have = [(s, p, m) for s in subjects for p in protocols
+            for m in muscles if curves.get((s, p), {}).get(m) is not None]
+    if not have:
+        raise ValueError("none of those muscles has a curve in any recording")
+    reach = {(s, p, m): float(np.nanmax(curves[(s, p)][m][0])) for s, p, m in have}
+    lim = min(reach, key=reach.get)
+    xmax = ref or reach[lim]
+    grid = np.linspace(0, xmax, 60)
+
+    fig, axes = plt.subplots(1, len(protocols), figsize=(5.6 * len(protocols), 4.6),
+                             squeeze=False, sharey=True)
+    axes = axes[0]
+    out = {}
+    for ax, p in zip(axes, protocols):
+        for s in subjects:
+            ys = []
+            for m in muscles:
+                xy = curves.get((s, p), {}).get(m)
+                if xy is None:
+                    continue
+                x, y = xy
+                k = np.argsort(x)
+                yi = np.interp(grid, x[k], y[k], left=np.nan, right=np.nan)
+                at = np.interp(xmax, x[k], y[k])
+                if np.isfinite(at) and at > 0:
+                    ys.append(100.0 * yi / at)
+            if not ys:
+                continue
+            a = np.vstack(ys)
+            import warnings as _w
+            with _w.catch_warnings():        # the low end of the grid is below some ladders
+                _w.simplefilter("ignore", RuntimeWarning)
+                mu, sd = np.nanmean(a, axis=0), np.nanstd(a, axis=0)
+            out[(s, p)] = (len(ys), float(mu[-1]))
+            ax.plot(grid, mu, "-", color=colours[s], lw=2.2, zorder=3,
+                    label=f"{s}  (n={len(ys)})")
+            if band and len(ys) > 1:
+                ax.fill_between(grid, mu - sd, mu + sd, color=colours[s], alpha=0.14, lw=0,
+                                zorder=2)
+        ax.axvline(1.0, color="0.55", ls=":", lw=1.3, zorder=1)
+        ax.axhline(100, color="0.85", lw=0.9, zorder=0)
+        ax.set_title(names.get(p, p), fontsize=13, fontweight="bold")
+        ax.set_xlabel("intensity (x motor threshold)", fontsize=11, color="0.2")
+        ax.set_xlim(0, xmax)
+        ax.tick_params(labelsize=10, colours="0.3") if False else ax.tick_params(labelsize=10,
+                                                                                colors="0.3")
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        ax.legend(frameon=False, fontsize=10, loc="upper left")
+    axes[0].set_ylabel(f"response (% of its value at {xmax:.2f} x MT)", fontsize=11, color="0.2")
+    fig.text(0.5, -0.02, f"line = mean of {len(muscles)} muscles, band = SD across them; "
+             f"the dotted line is motor threshold", ha="center", fontsize=9.5, color="0.45")
+    if title:
+        fig.suptitle(title, fontsize=14, fontweight="bold", y=1.02)
+    fig.tight_layout()
+    if save:
+        import os
+        os.makedirs(os.path.dirname(save), exist_ok=True)
+        fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+    plt.show()
+    print(f"common reference: {xmax:.2f} x MT  (the furthest EVERY recording reaches)")
+    if ref is None:
+        print(f"  set by {lim[0]} {names.get(lim[1], lim[1])} {lim[2]} - its sweep stops there")
+        short = {f"{s} {names.get(p, p)}": round(min(reach[(s, p, m)] for m in muscles
+                                                     if (s, p, m) in reach), 2)
+                 for s in subjects for p in protocols
+                 if any((s, p, m) in reach for m in muscles)}
+        print("  each recording reaches: " + ", ".join(f"{k} {v}x" for k, v in short.items()))
+    return xmax, out
+
+
+# ---------------------------------------------------------------------------
+# 6. one muscle, the participants side by side: how big, and how it holds up
+# ---------------------------------------------------------------------------
+def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, colours=None,
+             names=None, title=None, save=None, **kw):
+    """One muscle, one figure: participants side by side, a bar per protocol.
+
+    Left   - the 1st pulse as a multiple of that recording's own baseline noise. NOT in mV:
+             millivolts are not comparable between people (different gain, placement, anatomy),
+             but "how far above its own noise" is.
+    Middle - the 2nd pulse as % of the 1st.
+    Right  - the mean of pulses 2..N as % of the 1st.
+
+    Each muscle is taken at ITS own motor threshold in that recording, `steps` intensities up.
+    runs : {(subject, protocol): csv}      MT : {(subject, protocol): {muscle: mA}}
+    Returns the numbers behind the bars.
+    """
+    import warnings as _w
+    from .io import load_run
+    from .burst import burst_p2p, noise_p2p
+    from .paper import step_up
+    names = names or {"burst": "30 Hz burst", "arcex": "ARC-EX"}
+    colours = colours or {protocols[0]: "#1f3b73", protocols[1]: "#e6550d"}
+    hatch = {protocols[0]: "", protocols[1]: "///"}
+
+    val = {}
+    for s in subjects:
+        for p in protocols:
+            csv = runs.get((s, p))
+            th = MT.get((s, p), {}).get(muscle)
+            if not csv or not th:
+                continue
+            amp = step_up({muscle: th}, csv, steps, verbose=False).get(muscle) if steps else th
+            if not amp:
+                continue
+            meta, t, sig = load_run(csv)
+            chans = [c for c in sig if c != "Trigger A"]
+            ch = next((c for c in chans if pretty(c) == muscle), None)
+            amps = [m["amp_ma"] for m in meta]
+            if ch is None or amp not in amps:
+                continue
+            res = burst_p2p(meta, t, sig, chans, min_snr=None, max_edge_frac=None,
+                            **{k: v for k, v in kw.items()
+                               if k not in ("min_snr", "max_edge_frac")})
+            w = list(res["amps"]).index(amp)
+            y = np.asarray(res["p2p"][ch][w], float)
+            b = np.asarray(noise_p2p(t, sig, chans, win_len_ms=res["win"][0][1] - res["win"][0][0])[ch],
+                           float)
+            b = float(b[w]) if b.ndim else float(b)
+            with _w.catch_warnings():
+                _w.simplefilter("ignore", RuntimeWarning)
+                p1, rest = float(y[0]), float(np.nanmean(y[1:]))
+            if not np.isfinite(p1) or p1 <= 0:
+                continue
+            val[(s, p)] = dict(amp=amp, snr=(p1 / b if b > 0 else np.nan),
+                               p2=100 * float(y[1]) / p1, rest=100 * rest / p1, p1_mV=p1)
+
+    panels = [("snr", "1st pulse  (x its own baseline noise)", None),
+              ("p2", "2nd pulse  (% of the 1st)", 100),
+              ("rest", "mean of pulses 2-10  (% of the 1st)", 100)]
+    fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.2))
+    x = np.arange(len(subjects)); w = 0.8 / len(protocols)
+    for ax, (key, ttl, line) in zip(axes, panels):
+        for j, p in enumerate(protocols):
+            h = [val.get((s, p), {}).get(key, np.nan) for s in subjects]
+            ax.bar(x + (j - (len(protocols) - 1) / 2) * w, h, width=w * 0.9,
+                   facecolor=colours[p], alpha=0.85, hatch=hatch[p],
+                   edgecolor=("white" if hatch[p] else "none"), lw=0, zorder=2,
+                   label=names.get(p, p) if key == "snr" else None)
+            for xi, v in zip(x + (j - (len(protocols) - 1) / 2) * w, h):
+                if np.isfinite(v):
+                    ax.annotate(f"{v:.0f}", (xi, v), textcoords="offset points", xytext=(0, 3),
+                                ha="center", fontsize=8.5, color="0.35")
+        if line:
+            ax.axhline(line, color="0.4", lw=0.9, ls=(0, (2, 3)), zorder=1)
+        ax.set_xticks(x, subjects, fontsize=11)
+        ax.set_title(ttl, fontsize=11.5, fontweight="bold")
+        ax.tick_params(labelsize=10, colors="0.3")
+        ax.grid(True, axis="y", alpha=0.22); ax.set_axisbelow(True)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+    axes[0].legend(frameon=False, fontsize=10, loc="upper left")
+    at = ", ".join(f"{s} {names.get(p, p)} {v['amp']:g} mA"
+                   for (s, p), v in sorted(val.items()))
+    fig.text(0.5, -0.03, "each at its own motor threshold"
+             + (f" + {steps} step" if steps else "") + ":  " + at,
+             ha="center", fontsize=9, color="0.45")
+    fig.suptitle(title or muscle, fontsize=14, fontweight="bold", y=1.03)
+    fig.tight_layout()
+    if save:
+        import os
+        os.makedirs(os.path.dirname(save), exist_ok=True)
+        fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+    plt.show()
+    return val
