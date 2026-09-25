@@ -1,4 +1,5 @@
 """Loading recruitment CSVs and detecting the stimulus artifact window."""
+import os
 import csv
 import ast
 import numpy as np
@@ -61,3 +62,35 @@ def detect_stim(t, trig):
     """
     pulses = detect_pulses(t, trig)
     return pulses[0] if pulses else (0.0, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# where a recording's derived files live: results/<participant-session>/...
+# ---------------------------------------------------------------------------
+SESSIONS = {          # (date folder, subject folder) in tSCS_CHUV_data -> participant-session
+    ("08-07-2026", "P03tscsHealthy"): "P03_2026-07-08",
+    ("15-07-2026", "P03tscsHealthy"): "P03_2026-07-15_tendon_vibration",
+    ("16-07-2026", "P04tscsHealthy"): "P04_2026-07-16_tendon_vibration",
+    ("17-07-2026", "P04tscsHealthy"): "P04_2026-07-17_lidocaine",
+    ("24-07-2026", "P04tscsHealthy"): "P04_2026-07-24",
+    ("24-07-2026", "testSCS"):        "NTA_2026-07-24_polarity_lidocaine",
+}
+
+
+def session_of(csv_path):
+    """The participant-session a recording belongs to, from the two folders above it.
+    Unknown sessions return "" so their files stay in the root of results/ or figures/."""
+    parts = os.path.normpath(str(csv_path)).split(os.sep)
+    for i in range(len(parts) - 1):
+        got = SESSIONS.get((parts[i], parts[i + 1]))
+        if got:
+            return got
+    return ""
+
+
+def result_path(csv_path, prefix, root="results", ext=".csv"):
+    """Where `prefix` (latency / mt / burstp2p / SNR) for this recording is written and read:
+    results/<participant-session>/<prefix>_<source filename>.csv. One function for both sides,
+    so a saved file is always found again."""
+    stem = os.path.splitext(os.path.basename(str(csv_path)))[0]
+    return os.path.join(root, session_of(csv_path), f"{prefix}_{stem}{ext}")

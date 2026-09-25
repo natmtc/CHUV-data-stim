@@ -5,7 +5,7 @@ import warnings
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .io import load_run
+from .io import load_run, result_path
 from .latency import load_latency_csv
 from .quantify import peak_to_peak
 
@@ -16,7 +16,7 @@ def _load_res(csv_path, window_ms, offset_ms, results_dir, picks):
     muscles = [c for c in sig if c != "Trigger A"]
     if picks is None:
         stem = os.path.splitext(os.path.basename(csv_path))[0]
-        latfile = os.path.join(results_dir, f"latency_{stem}.csv")
+        latfile = result_path(csv_path, "latency", results_dir)
         if not os.path.exists(latfile):
             raise FileNotFoundError(
                 f"No saved latencies for this file:\n  {latfile}\n"
@@ -82,7 +82,7 @@ def _p2p_across_muscles(csv_path, window_ms, offset_ms, results_dir="results", p
     muscles = [c for c in sig if c != "Trigger A"]
     if picks is None:
         stem = os.path.splitext(os.path.basename(csv_path))[0]
-        latfile = os.path.join(results_dir, f"latency_{stem}.csv")
+        latfile = result_path(csv_path, "latency", results_dir)
         if not os.path.exists(latfile):
             raise FileNotFoundError(
                 f"No saved latencies for this file:\n  {latfile}\n"
@@ -261,7 +261,7 @@ def _load_picks(csv_path, results_dir, picks):
     muscles = [c for c in sig if c != "Trigger A"]
     if picks is None:
         stem = os.path.splitext(os.path.basename(csv_path))[0]
-        latfile = os.path.join(results_dir, f"latency_{stem}.csv")
+        latfile = result_path(csv_path, "latency", results_dir)
         if not os.path.exists(latfile):
             raise FileNotFoundError(
                 f"No saved latencies for this file:\n  {latfile}\n"

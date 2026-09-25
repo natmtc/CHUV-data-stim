@@ -230,8 +230,8 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
 
 def mt_file(csv_path, out_dir="results"):
     """Where the picks for one recording live: results/mt_<source-filename>.csv."""
-    src = os.path.splitext(os.path.basename(csv_path))[0]
-    return os.path.join(out_dir, f"mt_{src}.csv")
+    from .io import result_path
+    return result_path(csv_path, "mt", out_dir)
 
 
 def save_threshold_csv(picks, muscles, csv_path, meta=None, out_dir="results", overwrite=False):
@@ -244,8 +244,8 @@ def save_threshold_csv(picks, muscles, csv_path, meta=None, out_dir="results", o
     Returns the path.
     """
     import pandas as pd
-    os.makedirs(out_dir, exist_ok=True)
     out_csv = mt_file(csv_path, out_dir)
+    os.makedirs(os.path.dirname(out_csv), exist_ok=True)
 
     if meta is not None:
         have = {m["amp_ma"] for m in meta}

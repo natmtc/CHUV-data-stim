@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from .labels import pretty
+from .io import result_path
 from .plots import _base_side
 
 
@@ -87,7 +88,7 @@ def save_snr_csv(res, muscles, csv_path, meta=None, out_dir="results"):
                 row["electrode"] = meta[i]["electrode"]
                 row["mode"] = meta[i]["mode"]
             rows.append(row)
-    os.makedirs(out_dir, exist_ok=True)
-    out_csv = os.path.join(out_dir, f"SNR_{src}.csv")
+    out_csv = result_path(csv_path, "SNR", out_dir)
+    os.makedirs(os.path.dirname(out_csv), exist_ok=True)
     pd.DataFrame(rows).to_csv(out_csv, index=False)
     return out_csv

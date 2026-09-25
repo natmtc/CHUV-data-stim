@@ -5,15 +5,31 @@ before/after lidocaine, with tendon vibration, and with changed polarity.
 
 ## Layout
 
+One folder per participant-session, named `<participant>_<date>_<what the session was>`, and a
+session log spreadsheet at the repo root under the same name.
+
 ```
-src/functions/                 analysis code (loading, peak-to-peak, latency picker, figures)
-notebooks/original_polarity/   P04 - lidocaine (17-07-2026), tendon vibration (16-07-2026)
-notebooks/changed_polarity/    NTA - cathodic vs anodic, before/after lidocaine (24-07-2026)
-results/                       picked latencies and peak-to-peak tables (CSV)
-figures/                       saved figures
-tools/strip_outputs.py         git filter that keeps notebook outputs out of the repo
-tSCS_CHUV_data/                raw recordings - not tracked
+src/functions/                              analysis code (loading, peak-to-peak, pickers, figures)
+
+notebooks/P03_2026-07-15_tendon_vibration/  P03, vibration on/off       + P03_2026-07-15_tendon_vibration.xlsx
+notebooks/P04_2026-07-16_tendon_vibration/  P04, vibration on/off       + P04_2026-07-16_tendon_vibration.xlsx
+notebooks/P04_2026-07-17_lidocaine/         P04, before/with lidocaine  + P04_2026-07-17_lidocaine.xlsx
+notebooks/NTA_2026-07-24_polarity_lidocaine/ NTA, cathodic vs anodic x lidocaine
+                                                                        + NTA_2026-07-24_polarity_lidocaine.xlsx
+notebooks/across_participants/              P03 + P04 + NTA, baseline 30 Hz vs ARC-EX
+
+P03_2026-07-03_lidocaine.xlsx is a P03 lidocaine session (baseline anodic/cathodic, then post
+lidocaine) whose recordings are NOT in tSCS_CHUV_data - log only, no notebook.
+
+results/<participant-session>/               picked latencies, thresholds, peak-to-peak tables (CSV)
+figures/<participant-session>/               saved figures
+tools/strip_outputs.py                      git filter that keeps notebook outputs out of the repo
+tSCS_CHUV_data/                             raw recordings - not tracked
 ```
+
+Inside each folder the notebooks are `<participant>_<date>_<protocol>.ipynb`: `single_pulse`,
+`burst` (30 Hz), `arcex`, and for NTA also `burst_vs_arcex` - the comparison that makes the
+paper figures.
 
 ## Setup
 
@@ -34,7 +50,7 @@ Notebooks can be run from any folder - their first cell walks up to the repo roo
 
 Each **train** notebook (bursts, ARC-EX) follows the same sections: config, detection
 diagnostics, reliability of the automatic peak-to-peak, waterfalls, every intensity, recruitment
-curves. `tSCS_EMG_Burst_vs_ARCex.ipynb` is the comparison that produces the paper figures.
+curves. `NTA_2026-07-24_burst_vs_arcex.ipynb` is the comparison that produces the paper figures.
 
 The **single-pulse** notebooks use a different pipeline: latencies are picked by hand once per
 recording (section 2, run it once and comment the cells again) and stored in `results/`.
@@ -66,12 +82,24 @@ All train notebooks share the same peak-detection settings, set in each config c
 
 Change them in one notebook and the others no longer agree - keep them in step.
 
+## Where derived files go
+
+`results/` and `figures/` use the same `<participant>_<date>_<session>` folders as the notebooks.
+Nothing has to be typed: `functions.io.result_path(recording, prefix)` maps a recording to its own
+folder, and every reader and writer of a latency / threshold / peak-to-peak file goes through it,
+so a file is always found again where it was saved. `SESSIONS` in `io.py` is the one place the
+mapping lives - add a row there when a new session is recorded.
+
+`figures/_unsorted_pre_2026-09/` holds seventeen figures that predate this layout and carry no
+participant in their names.
+
 ## Sharing outputs
 
 Because outputs are stripped from the repo, send a rendered copy instead:
 
 ```bash
-.venv/bin/jupyter nbconvert --to html --execute notebooks/changed_polarity/tSCS_EMG_Burst_vs_ARCex.ipynb
+.venv/bin/jupyter nbconvert --to html --execute \
+  notebooks/NTA_2026-07-24_polarity_lidocaine/NTA_2026-07-24_burst_vs_arcex.ipynb
 ```
 
 One self-contained HTML file with every figure embedded. Add `--no-input` to hide the code.

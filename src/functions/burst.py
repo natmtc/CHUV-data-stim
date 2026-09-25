@@ -21,7 +21,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from .labels import pretty
-from .io import detect_pulses
+from .io import detect_pulses, result_path
 
 BEFORE, AFTER = "0.45", "#f39c12"      # same gray/orange as functions/compare.py
 PALETTE = [BEFORE, AFTER, "#1f77b4", "#2ca02c", "#9467bd"]   # condition 1, 2, 3, ...
@@ -555,8 +555,8 @@ def save_burst_csv(res, muscles, csv_path, meta=None, normalize="max", out_dir="
     """results/burstp2p_<source-filename>.csv — one row per muscle x intensity x pulse."""
     import pandas as pd
     src = os.path.splitext(os.path.basename(csv_path))[0]
-    os.makedirs(out_dir, exist_ok=True)
-    out_csv = os.path.join(out_dir, f"burstp2p_{src}.csv")
+    out_csv = result_path(csv_path, "burstp2p", out_dir)
+    os.makedirs(os.path.dirname(out_csv), exist_ok=True)
     norm = normalize_burst(res, normalize)
     rows = []
     for m in muscles:

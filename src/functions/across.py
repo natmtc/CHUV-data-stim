@@ -223,3 +223,69 @@ def fig_selectivity(MT, subjects, muscles, protocols=("burst", "arcex"), levels=
               f"muscles with one; recruited: "
               + ", ".join(f"{lv:g}xMT {f:.0f}%" for lv, f in zip(levels, fr)))
     return table
+
+
+# ---------------------------------------------------------------------------
+# 4. the headline grid: a few muscles, every participant, both protocols
+# ---------------------------------------------------------------------------
+def fig_muscle_grid(curves, MT, muscles, subjects, protocols=("burst", "arcex"), colours=None,
+                    names=None, xmax=2.0, title=None, save=None):
+    """One row per muscle, one column per participant, both protocols in every panel.
+
+    Read DOWN a column for one participant, ACROSS a row for one muscle. Both axes are
+    normalised inside each participant - x is intensity as a multiple of that muscle's own motor
+    threshold, y is its response as % of its own biggest - so the panels are directly comparable
+    even though the mA behind them are not. The mA each curve started from is printed in the
+    corner of its panel.
+    """
+    names = names or {"burst": "30 Hz burst", "arcex": "ARC-EX"}
+    colours = colours or {protocols[0]: "#1f3b73", protocols[1]: "#e6550d"}
+    ls = {protocols[0]: "-", protocols[1]: "--"}
+    nr, nc = len(muscles), len(subjects)
+    fig, axes = plt.subplots(nr, nc, figsize=(3.9 * nc, 2.9 * nr), squeeze=False,
+                             sharex=True, sharey=True)
+    for i, m in enumerate(muscles):
+        for j, s in enumerate(subjects):
+            ax = axes[i][j]
+            ax.axvline(1.0, color="0.6", ls=":", lw=1.2, zorder=1)
+            ax.axhline(50, color="0.93", lw=0.8, zorder=0)
+            lab = []
+            for p in protocols:
+                xy = curves.get((s, p), {}).get(m)
+                th = MT.get((s, p), {}).get(m)
+                if xy is None:
+                    continue
+                x, y = xy
+                k = x <= xmax
+                ax.plot(x[k], y[k], ls[p], color=colours[p], lw=2.0, alpha=0.95, zorder=3)
+                lab.append(f"{names.get(p, p)} {th:g} mA" if th else names.get(p, p))
+            if lab:
+                ax.annotate("\n".join(lab), (0.03, 0.97), xycoords="axes fraction", va="top",
+                            ha="left", fontsize=8.5, color="0.35")
+            else:
+                ax.annotate("no threshold", (0.5, 0.5), xycoords="axes fraction", ha="center",
+                            va="center", fontsize=10, color="0.6")
+            if i == 0:
+                ax.set_title(s, fontsize=13, fontweight="bold", pad=8)
+            if j == 0:
+                ax.set_ylabel(f"{m}\n\n% of its max", fontsize=10, color="0.2")
+            if i == nr - 1:
+                ax.set_xlabel("intensity (x motor threshold)", fontsize=10, color="0.2")
+            ax.set_xlim(0, xmax); ax.set_ylim(-5, 108)
+            ax.tick_params(labelsize=9, colors="0.3")
+            for sp in ("top", "right"):
+                ax.spines[sp].set_visible(False)
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], color=colours[p], lw=2.2, ls=ls[p], label=names.get(p, p))
+               for p in protocols]
+    handles.append(Line2D([], [], color="0.6", ls=":", lw=1.2, label="motor threshold (x1)"))
+    fig.legend(handles=handles, loc="upper center", ncol=len(handles), frameon=False, fontsize=11,
+               bbox_to_anchor=(0.5, 1.0))
+    if title:
+        fig.suptitle(title, fontsize=14, fontweight="bold", y=1.045)
+    fig.tight_layout(rect=(0, 0, 1, 0.965))
+    if save:
+        import os
+        os.makedirs(os.path.dirname(save), exist_ok=True)
+        fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+    plt.show()

@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
+from .io import result_path
 from .plots import _base_side
 from .quantify import peak_to_peak
 
@@ -94,7 +95,7 @@ def compare_lr_curves(csv_before, csv_after, metric="p2p", window_ms=20.0, offse
         meta, t, sig = load_run(path)
         muscles = [c for c in sig if c != "Trigger A"]
         stem = os.path.splitext(os.path.basename(path))[0]
-        latfile = os.path.join(results_dir, f"latency_{stem}.csv")
+        latfile = result_path(path, "latency", results_dir)
         if not os.path.exists(latfile):
             raise FileNotFoundError(f"No saved latencies for {stem} - pick and save them first.")
         picks = load_latency_csv(latfile)
@@ -178,8 +179,7 @@ def compare_per_muscle(csv_before, csv_after, metric="p2p", window_ms=20.0, offs
     for path in paths:
         meta, t, sig = load_run(path)
         muscles = [c for c in sig if c != "Trigger A"]
-        latfile = os.path.join(results_dir,
-                               f"latency_{os.path.splitext(os.path.basename(path))[0]}.csv")
+        latfile = result_path(path, "latency", results_dir)
         if not os.path.exists(latfile):
             raise FileNotFoundError(f"No saved latencies for {path} - pick and save them first.")
         picks = load_latency_csv(latfile)

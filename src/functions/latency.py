@@ -6,7 +6,7 @@ import ipywidgets as W
 from IPython.display import display
 
 from .labels import pretty
-from .io import detect_stim, detect_pulses
+from .io import detect_stim, detect_pulses, result_path
 
 
 def latency_picker(meta, t, sig, muscles, xlim=(-20, 80), resp_end=50.0, manual_peaks=None):
@@ -122,8 +122,8 @@ def save_latency_csv(manual_peaks, muscles, csv_path, meta=None, out_dir="result
     """
     import pandas as pd
     src = os.path.splitext(os.path.basename(csv_path))[0]   # unique stem incl. timestamp
-    os.makedirs(out_dir, exist_ok=True)
-    out_csv = os.path.join(out_dir, f"latency_{src}.csv")
+    out_csv = result_path(csv_path, "latency", out_dir)
+    os.makedirs(os.path.dirname(out_csv), exist_ok=True)
 
     if meta is not None:      # the picks must belong to THIS recording (same intensities)
         want = [m["amp_ma"] for m in meta]
