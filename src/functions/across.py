@@ -386,14 +386,12 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
 # 6. one muscle, the participants side by side: how big, and how it holds up
 # ---------------------------------------------------------------------------
 def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, colours=None,
-             names=None, min_snr_ratio=3.0, title=None, save=None, **kw):
+             names=None, min_snr_ratio=1.5, rest_from=2, title=None, save=None, **kw):
     """One muscle, one figure: participants side by side, a bar per protocol.
 
-    Left   - the 1st pulse as a multiple of that recording's own baseline noise. NOT in mV:
-             millivolts are not comparable between people (different gain, placement, anatomy),
-             but "how far above its own noise" is.
-    Middle - the 2nd pulse as % of the 1st.
-    Right  - the mean of pulses 2..N as % of the 1st.
+    Both panels are % of that condition's OWN 1st pulse, so 100 % = no change along the train:
+    left the 2nd pulse, right the mean of pulses `rest_from`..N. How big the 1st pulse was is
+    printed underneath rather than plotted - it is the denominator, not a result.
 
     Each muscle is taken at ITS own motor threshold in that recording, `steps` intensities up.
     The two ratio panels divide by the 1st pulse, so a small 1st pulse makes them explode or
@@ -436,41 +434,39 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
             b = float(b[w]) if b.ndim else float(b)
             with _w.catch_warnings():
                 _w.simplefilter("ignore", RuntimeWarning)
-                p1, rest = float(y[0]), float(np.nanmean(y[1:]))
+                p1, rest = float(y[0]), float(np.nanmean(y[rest_from - 1:]))
             if not np.isfinite(p1) or p1 <= 0:
                 continue
             val[(s, p)] = dict(amp=amp, snr=(p1 / b if b > 0 else np.nan),
                                p2=100 * float(y[1]) / p1, rest=100 * rest / p1, p1_mV=p1)
 
-    panels = [("snr", "1st pulse", "x baseline noise", None),
-              ("p2", "2nd pulse", "% of 1st pulse", 100),
-              ("rest", "mean of pulses 2-10", "% of 1st pulse", 100)]
-    fig, axes = plt.subplots(1, 3, figsize=(12.6, 4.4))
+    n_pul = kw.get("n_pulses", 10)
+    panels = [("p2", "2nd pulse", "% of 1st pulse", 100),
+              ("rest", f"mean of pulses {rest_from}-{n_pul}", "% of 1st pulse", 100)]
+    fig, axes = plt.subplots(1, len(panels), figsize=(5.8 * len(panels), 4.4), sharey=True)
     x = np.arange(len(subjects)); w = 0.8 / len(protocols)
     for ax, (key, ttl, ylab, line) in zip(axes, panels):
         for j, p in enumerate(protocols):
-            h = [val.get((s, p), {}).get(key, np.nan) if
-                 (key == "snr" or val.get((s, p), {}).get("snr", 0) >= min_snr_ratio)
-                 else np.nan for s in subjects]
+            h = [val.get((s, p), {}).get(key, np.nan)
+                 if val.get((s, p), {}).get("snr", 0) >= min_snr_ratio else np.nan
+                 for s in subjects]
             ax.bar(x + (j - (len(protocols) - 1) / 2) * w, h, width=w * 0.9,
                    facecolor=colours[p], alpha=0.85, hatch=hatch[p],
                    edgecolor=("white" if hatch[p] else "none"), lw=0, zorder=2,
-                   label=names.get(p, p) if key == "snr" else None)
-            for xi, v in zip(x + (j - (len(protocols) - 1) / 2) * w, h):
+                   label=names.get(p, p) if key == "p2" else None)
+            for xi, v, s_ in zip(x + (j - (len(protocols) - 1) / 2) * w, h, subjects):
                 if np.isfinite(v):
                     ax.annotate(f"{v:.0f}", (xi, v), textcoords="offset points", xytext=(0, 3),
-                                ha="center", fontsize=8.5, color="0.35")
-        if key == "snr":
-            # one participant can be 10x another here, which flattens the rest on a linear
-            # axis; log keeps every bar readable and puts the noise floor at 1
-            ax.set_yscale("log")
-            ax.axhline(1, color="0.4", lw=0.9, ls=(0, (2, 3)), zorder=1)
-            ax.set_ylim(bottom=0.9)
+                                ha="center", fontsize=9, color="0.35")
+                elif (s_, p) in val:        # the condition exists, this pulse does not
+                    ax.annotate("pulse\nvoid", (xi, 2), ha="center", va="bottom", fontsize=8,
+                                color="#d62728", style="italic")
         if line:
             ax.axhline(line, color="0.4", lw=0.9, ls=(0, (2, 3)), zorder=1)
         ax.set_xticks(x, subjects, fontsize=12)
         ax.set_title(ttl, fontsize=13, fontweight="bold")
-        ax.set_ylabel(ylab, fontsize=11, color="0.25")
+        if ax is axes[0]:
+            ax.set_ylabel(ylab, fontsize=12, color="0.25")
         ax.tick_params(labelsize=10, colors="0.3")
         ax.grid(True, axis="y", alpha=0.22); ax.set_axisbelow(True)
         for sp in ("top", "right"):
@@ -481,8 +477,9 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
     weak = [f"{s} {names.get(p, p)}" for (s, p), v in sorted(val.items())
             if v["snr"] < min_snr_ratio]
     if weak:
-        fig.text(0.5, -0.02, "blank = 1st pulse too close to noise to divide by  ("
-                 + ", ".join(weak) + ")", ha="center", fontsize=9.5, color="#d62728")
+        fig.text(0.5, -0.02, "blank = 1st pulse under "
+                 f"{min_snr_ratio:g}x noise, too small to divide by  (" + ", ".join(weak) + ")",
+                 ha="center", fontsize=9.5, color="#d62728")
     fig.suptitle(title or muscle, fontsize=15, fontweight="bold", y=1.10)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     if save:
@@ -490,4 +487,10 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
         os.makedirs(os.path.dirname(save), exist_ok=True)
         fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
     plt.show()
+    print(f"{muscle} - the 1st pulse each bar is a % OF:")
+    for (s_, p_), v in sorted(val.items()):
+        note = ("   <- 1st pulse too small, bars blank" if v["snr"] < min_snr_ratio else
+                "   <- 2nd pulse voided by a dropout" if not np.isfinite(v["p2"]) else "")
+        print(f"   {s_:5s} {names.get(p_, p_):12s} {v['amp']:5g} mA   {v['p1_mV']:.4f} mV "
+              f"= {v['snr']:5.1f} x its noise" + note)
     return val
