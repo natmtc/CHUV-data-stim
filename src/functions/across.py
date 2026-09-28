@@ -584,7 +584,7 @@ def vibration_table(runs, MT, muscles, conditions, base="Baseline", **kw):
     import warnings as _w
     from .io import load_run
     from .burst import burst_p2p
-    out = {}
+    out, missing = {}, []
     for (s, cond), csv in runs.items():
         meta, t, sig = load_run(csv)
         chans = [c for c in sig if c != "Trigger A"]
@@ -595,8 +595,14 @@ def vibration_table(runs, MT, muscles, conditions, base="Baseline", **kw):
         for m in muscles:
             th = MT.get(s, {}).get(m)
             ch = next((c for c in chans if pretty(c) == m), None)
-            if not th or ch is None or th not in amps:
+            if ch is None:
                 continue
+            if not th:
+                missing.append((s, cond, m, "no threshold in the baseline")); continue
+            if th not in amps:
+                missing.append((s, cond, m, f"{th:g} mA not in this recording "
+                                            f"({amps[0]:g}-{amps[-1]:g}, step "
+                                            f"{amps[1]-amps[0]:g})")); continue
             with _w.catch_warnings():
                 _w.simplefilter("ignore", RuntimeWarning)
                 y = np.asarray(res["p2p"][ch][amps.index(th)], float)
@@ -605,6 +611,10 @@ def vibration_table(runs, MT, muscles, conditions, base="Baseline", **kw):
     for (s, cond, m), v in out.items():
         b = out.get((s, base, m))
         v["pct"] = 100 * v["p1"] / b["p1"] if b and np.isfinite(b["p1"]) and b["p1"] > 0 else np.nan
+    if missing:
+        print("not comparable, so left blank:")
+        for s_, c_, m_, why in missing:
+            print(f"   {s_}  {c_:18s} {m_:22s} {why}")
     return out
 
 
@@ -631,8 +641,7 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
             if not np.isfinite(h).any():
                 continue
             ax.bar(x + (j - (len(conditions) - 1) / 2) * w, h, width=w * 0.9,
-                   color=colours[j % len(colours)], alpha=0.9, zorder=2,
-                   label=cond if ax is axes[0] else None)
+                   color=colours[j % len(colours)], alpha=0.9, zorder=2)
         ax.axhline(100, color="0.35", lw=1.0, ls=(0, (2, 3)), zorder=1)
         vib = (vibrated or {}).get(s)
         ax.set_xticks(x, [(m + "  *" if m == vib else m) for m in muscles], rotation=20,
@@ -645,8 +654,11 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
         ax.tick_params(colors="0.25")
         for sp in ("top", "right"):
             ax.spines[sp].set_visible(False)
-    h_, l_ = axes[0].get_legend_handles_labels()
-    fig.legend(h_, l_, loc="upper center", ncol=len(conditions), frameon=False, fontsize=11,
+    from matplotlib.patches import Patch
+    drawn = [c_ for c_ in conditions if any((s_, c_, m_) in tab for s_ in subjects
+                                            for m_ in muscles)]
+    fig.legend([Patch(facecolor=colours[conditions.index(c_) % len(colours)], alpha=0.9)
+                for c_ in drawn], drawn, loc="upper center", ncol=len(drawn), frameon=False,
                bbox_to_anchor=(0.5, 1.0))
     if title:
         fig.suptitle(title, fontweight="bold", y=1.04)
