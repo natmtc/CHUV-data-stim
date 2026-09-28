@@ -708,3 +708,40 @@ def check_thresholds(runs, MT, muscle, keys=None, xlim=(-20, 130), names=None, s
         print(f"{lab}: using {th:g} mA"
               + (f"  (the one below is {amps[i-1]:g} mA" if i else "  (lowest tested")
               + (f", above {amps[i+1]:g} mA)" if i + 1 < len(amps) else ", highest tested)"))
+
+
+# ---------------------------------------------------------------------------
+# 9. has a threshold been re-picked since the figures were built?
+# ---------------------------------------------------------------------------
+def mt_stamp(runs):
+    """When each recording's saved thresholds were last written. Take this where MT is built."""
+    import os
+    from .threshold import mt_file
+    return {k: (os.path.getmtime(mt_file(v)) if os.path.exists(mt_file(v)) else None)
+            for k, v in runs.items()}
+
+
+def warn_if_stale(runs, stamp, used=None):
+    """Say so if a threshold file has been saved since `stamp` was taken.
+
+    The figures read MT from memory, not from disk, so a pick saved after MT was built changes
+    nothing until the threshold cell is re-run. `used` names the recordings the figures actually
+    take thresholds FROM (e.g. only the baselines), so re-picking anything else is reported as
+    having no effect rather than as something to re-run for.
+    """
+    now, newer = mt_stamp(runs), []
+    for k, t in now.items():
+        was = stamp.get(k)
+        if t and (was is None or t > was + 0.5):
+            newer.append(k)
+    if not newer:
+        return False
+    matters = [k for k in newer if used is None or k in used]
+    idle = [k for k in newer if k not in matters]
+    if matters:
+        print("!! saved since the thresholds were built, RE-RUN the threshold cell: "
+              + ", ".join(str(k) for k in matters))
+    if idle:
+        print("   (also re-picked, but these figures do not take thresholds from them, so "
+              "nothing changes: " + ", ".join(str(k) for k in idle) + ")")
+    return bool(matters)
