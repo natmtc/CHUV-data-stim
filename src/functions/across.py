@@ -20,13 +20,13 @@ from .burst import burst_p2p, resolve_muscles
 PAPER_RC = {
     "font.family": "sans-serif",
     "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
-    "font.size": 13, "axes.titlesize": 15, "axes.labelsize": 13,
-    "xtick.labelsize": 12, "ytick.labelsize": 12, "legend.fontsize": 13,
+    "font.size": 15, "axes.titlesize": 17, "axes.labelsize": 16,
+    "xtick.labelsize": 15, "ytick.labelsize": 15, "legend.fontsize": 15,
     "axes.grid": False, "axes.spines.top": False, "axes.spines.right": False,
 }
 # two protocols, and the conditions of the vibration figure
-PROTOCOL_COLOURS = ["#2E6F95", "#E8963C"]                       # blue, amber
-CONDITION_COLOURS = ["#9BA7B0", "#2E6F95", "#E8963C", "#4C9A7A"]  # grey, blue, amber, green
+PROTOCOL_COLOURS = ["#9A9A9A", "#C0392B"]                       # 30 Hz grey, ARC-EX red
+CONDITION_COLOURS = ["#C6C6C6", "#9A9A9A", "#C0392B", "#2E6F95"]  # baseline, off, ON, ON-2
 
 
 def recruitment(csv, muscles, mt, **kw):
@@ -321,7 +321,7 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
     Returns the reference used and the per-subject values at it.
     """
     names = names or {"burst": "30 Hz burst", "arcex": "ARC-EX"}
-    colours = colours or dict(zip(subjects, ["#2E6F95", "#E8963C", "#4C9A7A", "#8A6FA8"]))
+    colours = colours or dict(zip(subjects, ["#4C4C4C", "#C0392B", "#2E6F95", "#8A6FA8"]))
 
     have = [(s, p, m) for s in subjects for p in protocols
             for m in muscles if curves.get((s, p), {}).get(m) is not None]
@@ -409,12 +409,16 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
 # 6. one muscle, the participants side by side: how big, and how it holds up
 # ---------------------------------------------------------------------------
 def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, colours=None,
-             names=None, min_snr_ratio=1.5, rest_from=2, with_p1=True, title=None,
-             save=None, **kw):
+             names=None, min_snr_ratio=1.5, rest_from=2, with_p1=True, traces=True,
+             trace_ms=None, title=None, save=None, **kw):
     """One muscle, one figure: participants side by side, a bar per protocol.
 
     The ratio panels are % of that condition's OWN 1st pulse, so 100 % = no change along the
     train: the 2nd pulse, and the mean of pulses `rest_from`..N.
+
+    traces adds a row underneath: the EMG of that muscle at the very intensity the bars are
+    measured from, one panel per participant, both protocols overlaid in the bar colours - so the
+    numbers can be read against the signal they came from.
 
     with_p1 adds a first panel with the 1st pulse itself, in mV - the quantity those percentages
     are a percentage OF, so a ratio taken off a near-noise response is visible rather than hidden.
@@ -465,18 +469,24 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
                 p1, rest = float(y[0]), float(np.nanmean(y[rest_from - 1:]))
             if not np.isfinite(p1) or p1 <= 0:
                 continue
+            onset = res["pulse_ms"]; ipi = res["ipi_ms"]
+            keep = (t >= onset[0] - 20) & (t <= onset[-1] + ipi)
             val[(s, p)] = dict(amp=amp, snr=(p1 / b if b > 0 else np.nan),
-                               p2=100 * float(y[1]) / p1, rest=100 * rest / p1, p1_mV=p1)
+                               p2=100 * float(y[1]) / p1, rest=100 * rest / p1, p1_mV=p1,
+                               t=t[keep] - onset[0], y=sig[ch][w][keep])
 
     n_pul = kw.get("n_pulses", 10)
     panels = ([("p1_mV", "1st pulse", "mV  (within a subject only)", None)] if with_p1 else []) + \
              [("p2", "2nd pulse", "% of 1st pulse", 100),
               ("rest", f"mean of pulses {rest_from}-{n_pul}", "% of 1st pulse", 100)]
     rc = plt.rc_context(PAPER_RC); rc.__enter__()
-    fig = plt.figure(figsize=(5.4 * len(panels), 4.6))
+    nrow = 2 if traces else 1
+    fig = plt.figure(figsize=(5.4 * len(panels), 4.6 + (3.0 if traces else 0)))
+    gs = fig.add_gridspec(nrow, len(panels), height_ratios=[1, 0.62] if traces else [1],
+                          hspace=0.55)
     axes, base_ax = [], None
     for k, (key, _, _, _) in enumerate(panels):
-        ax = fig.add_subplot(1, len(panels), k + 1, sharey=base_ax if key != "p1_mV" else None)
+        ax = fig.add_subplot(gs[0, k], sharey=base_ax if key != "p1_mV" else None)
         if key != "p1_mV" and base_ax is None:
             base_ax = ax
         axes.append(ax)
@@ -518,6 +528,36 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
         import os
         os.makedirs(os.path.dirname(save), exist_ok=True)
         fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+    if traces:
+        # one panel per participant: the trains the bars were measured from
+        tax = [fig.add_subplot(gs[1, k]) for k in range(min(len(subjects), len(panels)))]
+        for ax, s_ in zip(tax, subjects):
+            ys = []
+            for p_ in protocols:
+                v = val.get((s_, p_))
+                if not v or "y" not in v:
+                    continue
+                m_ = v["t"] <= (trace_ms or v["t"].max())
+                ax.plot(v["t"][m_], v["y"][m_], "-", color=colours[p_], lw=1.0, alpha=0.9)
+                ys.append(v["y"][m_])
+            ax.set_title(s_, fontweight="bold", pad=4)
+            ax.set_xlabel("time (ms)", color="0.25")
+            for sp in ("top", "right", "left"):
+                ax.spines[sp].set_visible(False)
+            ax.set_yticks([]); ax.tick_params(colors="0.25")
+            if not ys:
+                continue
+            # each participant on its own scale, with its own bar: millivolts do not compare
+            # between people, and one shared scale flattens whoever responds least
+            lo = float(np.nanmin(np.concatenate(ys))); hi = float(np.nanmax(np.concatenate(ys)))
+            pad = (hi - lo) * 0.12
+            ax.set_ylim(lo - pad, hi + pad)
+            bar = float(f"{(hi - lo) / 3:.1g}") or 0.05
+            x0 = ax.get_xlim()[0]
+            ax.plot([x0, x0], [lo, lo + bar], color="0.25", lw=3, solid_capstyle="butt",
+                    clip_on=False)
+            ax.annotate(f"{bar:g} mV", (x0, lo + bar / 2), xytext=(7, 0),
+                        textcoords="offset points", va="center", fontsize=13, color="0.25")
     plt.show(); rc.__exit__(None, None, None)
     print(f"{muscle} - the 1st pulse each bar is a % OF:")
     for (s_, p_), v in sorted(val.items()):
