@@ -197,6 +197,9 @@ def burst_p2p(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_ms
             for m in muscles}                                  # per-muscle windows
 
     nW, nP = len(meta), len(use)
+    # where the anchored search was centred, so a diagnostic can show WHY a visible peak was not
+    # taken: only +-anchor_win_ms around these latencies is searched
+    anchor_t = {m: np.full((nW, 2), np.nan) for m in muscles}
     out = {k: {m: np.full((nW, nP), np.nan) for m in muscles}
            for k in ("p2p", "tmax", "tmin", "ymax", "ymin")}
     dropouts = {m: np.zeros((nW, nP), bool) for m in muscles}
@@ -228,7 +231,8 @@ def burst_p2p(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_ms
                           [i for i in range(len(segs)) if ok_k[i]]
                 if not ref_idx:
                     continue
-                i_hi, i_lo, _, _ = _anchored_extrema(rel, segs, ref_idx, anchor_win_ms)
+                i_hi, i_lo, t_hi_, t_lo_ = _anchored_extrema(rel, segs, ref_idx, anchor_win_ms)
+                anchor_t[m][w] = (t_hi_, t_lo_)
                 for k in range(len(segs)):
                     if not ok_k[k] or i_hi[k] < 0 or i_lo[k] < 0:
                         continue
@@ -292,6 +296,7 @@ def burst_p2p(meta, t, sig, muscles, n_pulses=10, resp_start_ms=8.0, resp_end_ms
                p1_weak=p1_weak, snr_on=snr_on, responding=responding, reason=reason,
                edge_frac=edge_frac, min_snr=min_snr, max_edge_frac=max_edge_frac,
                dropouts=dropouts, anchor=anchor, anchor_win_ms=anchor_win_ms,
+               anchor_t=anchor_t,
                amps=np.array([m["amp_ma"] for m in meta]))
     return out
 
@@ -1232,6 +1237,14 @@ def plot_pulse_overlay(meta, t, sig, muscles, amp, n_pulses=10, resp_start_ms=8.
         ax = axes[i]
         a_rel, b_rel = np.array(res["wins"][m][0]) - onset[0]
         ax.axvspan(a_rel, b_rel, color="#2ca25f", alpha=0.10, zorder=0)
+        at = res.get("anchor_t", {}).get(m)
+        if at is not None and np.isfinite(at[w]).all():
+            # the ONLY places a max/min can be taken from - a peak outside these bands is
+            # invisible to the detector however obvious it looks
+            for c_, lab_ in zip(at[w], ("max searched here", "min searched here")):
+                ax.axvspan(c_ - res["anchor_win_ms"], c_ + res["anchor_win_ms"],
+                           color="#C0392B", alpha=0.10, zorder=0)
+                ax.axvline(c_, color="#C0392B", ls=":", lw=1.0, alpha=0.7, zorder=1)
         for k in range(len(onset)):
             seg = (t >= onset[k] - 2) & (t <= onset[k] + ipi)
             col = cmap(k / max(len(onset) - 1, 1))
