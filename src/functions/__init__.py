@@ -8,7 +8,8 @@ from .threshold import (threshold_picker, save_threshold_csv, load_threshold_csv
                         mt_file, thresholds_for, threshold_source, typical_threshold)
 from .across import (recruitment, fig_threshold_ratio, fig_recruitment,
                      fig_selectivity, fig_muscle_grid,
-                     fig_across_subjects, fig_bars)
+                     fig_across_subjects, fig_bars,
+                     vibration_table, fig_vibration)
 from .burst import (burst_p2p, normalize_burst, artifact_extent, clipped_channels,
                     plot_burst_windows, plot_burst_p2p, compare_burst_p2p, save_burst_csv,
                     first_vs_rest, plot_first_vs_rest, compare_first_vs_rest,
@@ -25,7 +26,7 @@ __all__ = [
     "threshold_picker", "save_threshold_csv", "load_threshold_csv", "mt_file",
     "thresholds_for", "threshold_source", "typical_threshold",
     "recruitment", "fig_threshold_ratio", "fig_recruitment", "fig_selectivity",
-    "fig_muscle_grid", "fig_across_subjects", "fig_bars",
+    "fig_muscle_grid", "fig_across_subjects", "fig_bars", "vibration_table", "fig_vibration",
     "burst_p2p", "normalize_burst", "artifact_extent", "clipped_channels",
     "plot_burst_windows", "plot_burst_p2p",
     "compare_burst_p2p", "save_burst_csv",

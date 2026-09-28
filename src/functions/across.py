@@ -504,3 +504,88 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
         print(f"   {s_:5s} {names.get(p_, p_):12s} {v['amp']:5g} mA   {v['p1_mV']:.4f} mV "
               f"= {v['snr']:5.1f} x its noise" + note)
     return val
+
+
+# ---------------------------------------------------------------------------
+# 7. tendon vibration: every condition as a change from that session's baseline
+# ---------------------------------------------------------------------------
+def vibration_table(runs, MT, muscles, conditions, base="Baseline", **kw):
+    """Per subject, muscle and condition: pulse-1 p2p at that muscle's own motor threshold,
+    and the same as a % of the SAME subject's baseline.
+
+    Vibration is a within-session manipulation, so the only honest quantity is the change from
+    that session's own baseline - between participants you then compare the *changes*, never the
+    amplitudes. runs : {(subject, condition): csv}   MT : {subject: {muscle: mA}} from baseline.
+    """
+    import warnings as _w
+    from .io import load_run
+    from .burst import burst_p2p
+    out = {}
+    for (s, cond), csv in runs.items():
+        meta, t, sig = load_run(csv)
+        chans = [c for c in sig if c != "Trigger A"]
+        res = burst_p2p(meta, t, sig, chans, min_snr=None, max_edge_frac=None,
+                        **{k: v for k, v in kw.items()
+                           if k not in ("min_snr", "max_edge_frac")})
+        amps = list(res["amps"])
+        for m in muscles:
+            th = MT.get(s, {}).get(m)
+            ch = next((c for c in chans if pretty(c) == m), None)
+            if not th or ch is None or th not in amps:
+                continue
+            with _w.catch_warnings():
+                _w.simplefilter("ignore", RuntimeWarning)
+                y = np.asarray(res["p2p"][ch][amps.index(th)], float)
+                out[(s, cond, m)] = dict(amp=th, p1=float(y[0]),
+                                         rest=float(np.nanmean(y[1:])))
+    for (s, cond, m), v in out.items():
+        b = out.get((s, base, m))
+        v["pct"] = 100 * v["p1"] / b["p1"] if b and np.isfinite(b["p1"]) and b["p1"] > 0 else np.nan
+    return out
+
+
+def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, colours=None,
+                  title=None, save=None):
+    """One panel per participant: every muscle, a bar per condition, as % of that participant's
+    own baseline. 100 % = unchanged by the manipulation.
+
+    vibrated : {subject: muscle} - the muscle the vibrator was actually on, marked on the axis.
+               The vibrator sat on a different muscle and a different side in each participant,
+               so the comparison across people is of the CHANGE at the vibrated site, never of
+               one participant's "VIB ON extensors" against another's.
+    """
+    colours = colours or ["0.45", "#1f3b73", "#e6550d", "#2ca25f"]
+    fig, axes = plt.subplots(len(subjects), 1, figsize=(1.25 * len(muscles) + 3.5,
+                                                        3.5 * len(subjects)), squeeze=False)
+    axes = axes.ravel()
+    x = np.arange(len(muscles)); w = 0.8 / len(conditions)
+    for ax, s in zip(axes, subjects):
+        for j, cond in enumerate(conditions):
+            h = [tab.get((s, cond, m), {}).get("pct", np.nan) for m in muscles]
+            if not np.isfinite(h).any():
+                continue
+            ax.bar(x + (j - (len(conditions) - 1) / 2) * w, h, width=w * 0.9,
+                   color=colours[j % len(colours)], alpha=0.9, zorder=2,
+                   label=cond if ax is axes[0] else None)
+        ax.axhline(100, color="0.35", lw=1.0, ls=(0, (2, 3)), zorder=1)
+        vib = (vibrated or {}).get(s)
+        ax.set_xticks(x, [("* " + m if m == vib else m) for m in muscles], rotation=30,
+                      ha="right", fontsize=10)
+        ax.set_ylabel("% of this subject's baseline", fontsize=11, color="0.25")
+        ax.set_title(f"{s}" + (f"   (* = vibrated: {vib})" if vib else ""), fontsize=13,
+                     fontweight="bold", loc="left")
+        ax.tick_params(labelsize=10, colors="0.3")
+        ax.grid(True, axis="y", alpha=0.22); ax.set_axisbelow(True)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+    h_, l_ = axes[0].get_legend_handles_labels()
+    fig.legend(h_, l_, loc="upper center", ncol=len(conditions), frameon=False, fontsize=11,
+               bbox_to_anchor=(0.5, 1.0))
+    if title:
+        fig.suptitle(title, fontsize=14, fontweight="bold", y=1.05)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    if save:
+        import os
+        os.makedirs(os.path.dirname(save), exist_ok=True)
+        fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+    plt.show()
