@@ -47,7 +47,8 @@ def _close_previous(key):
 
 
 def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest=None,
-                     gain_frac=0.9, mode="auto", on_save=None, key=None):
+                     gain_frac=0.9, mode="auto", on_save=None, key=None,
+                     suggest_label="detected"):
     """Pick the motor threshold, one muscle at a time.
 
     Every intensity of the recording is drawn stacked at its own mA, exactly like `waterfall`.
@@ -65,8 +66,9 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
     on_save : called with `picks` by a Save button next to the controls, so one cell is the
               whole job - open, pick, save. Whatever it returns is shown beside the button.
     picks   : a previous session's dict, `picks[channel] = mA or nan`, to resume or correct.
-    suggest : {muscle or label: mA} drawn as a green dotted line - the automatic threshold, so
-              you can see where the detector put it before overriding it.
+    suggest : {muscle or label: mA} drawn as a green dotted line, named by `suggest_label`.
+              Whatever you pass, label it for what it IS - "detected" only if it really is the
+              detector's answer for THIS recording.
 
     Returns `picks`, mutated live as you pick.
     """
@@ -108,7 +110,7 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
         s = _suggested(m)
         if s is not None:
             ax.axhline(s, color="#2ca25f", ls=":", lw=1.6, zorder=1)
-            ax.annotate(f"detected {s} mA", (xlim[0], s), xytext=(4, 4),
+            ax.annotate(f"{suggest_label} {s} mA", (xlim[0], s), xytext=(4, 4),
                         textcoords="offset points", color="#2ca25f", fontsize=9,
                         fontweight="bold")
         for a0, a1 in pulses:
