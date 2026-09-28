@@ -851,103 +851,125 @@ def fig_threshold_grid(recordings, muscles, xlim=(-20, 130), gain_frac=0.9, titl
                                        for m in muscles))
     return out
 
-
 # ---------------------------------------------------------------------------
-# 11. one row of panels: how every muscle's peaks are detected, each at its own mA
+# 11. how every muscle's peaks are detected, each at its own mA: one grid, laid
+#     out like the waterfall grid above - a row per recording, a column per muscle
 # ---------------------------------------------------------------------------
-def fig_detection_row(csv, MT, muscles, edge_ms=1.0, jitter_ms=0.5, xlim_ms=None,
-                      nearest=True, title=None, save=None, **kw):
-    """One panel per muscle, side by side: that muscle's pulses re-aligned on their own onset,
-    at ITS own threshold, with the max (v) and min (^) each peak-to-peak is made of.
+def _detection_panel(ax, t, sig, ch, res, raw, flags, w, th, note, xlim_ms, cmap):
+    """Draw one muscle's 10 pulses re-aligned on their own onset, with the max/min taken."""
+    onset, ipi = res["pulse_ms"], res["ipi_ms"]
+    a_rel, b_rel = np.array(res["wins"][ch][0]) - onset[0]
+    hi = xlim_ms or (b_rel + 2)
+    ax.axvspan(a_rel, min(b_rel, hi), color="#2ca25f", alpha=0.10, zorder=0)
+    at = res.get("anchor_t", {}).get(ch)
+    if at is not None and np.isfinite(at[w]).all():
+        for c_ in at[w]:
+            ax.axvspan(c_ - res["anchor_win_ms"], c_ + res["anchor_win_ms"],
+                       color="#C0392B", alpha=0.10, zorder=0)
+    for k in range(len(onset)):
+        seg = (t >= onset[k] - 2) & (t <= onset[k] + ipi)
+        ax.plot(t[seg] - onset[k], sig[ch][w][seg], lw=0.9, alpha=0.85,
+                color=cmap(k / max(len(onset) - 1, 1)), zorder=2)
+    for key, mk in (("max", "v"), ("min", "^")):
+        tt = raw[f"t{key}"][ch][w] - onset[:len(raw[f"t{key}"][ch][w])]
+        yy = raw[f"y{key}"][ch][w]
+        ax.plot(tt, yy, mk, ms=6, color="#333333", mec="white", mew=0.7, zorder=5)
+        bad = np.asarray(flags[ch])[w][:len(tt)]
+        if bad.any():
+            ax.plot(tt[bad], yy[bad], mk, ms=10, mfc="none", mec="#C0392B", mew=1.6, zorder=6)
+    ax.axvline(0, color="#C0392B", lw=1.2, alpha=0.8, zorder=1)
+    ax.set_xlim(-2, hi)
+    n_bad = int(np.sum(np.asarray(flags[ch])[w]))
+    ax.annotate(f"{th:g} mA", (0.03, 0.03), xycoords="axes fraction", ha="left", va="bottom",
+                fontsize=11, color="0.35", fontweight="bold")
+    ax.annotate(f"{n_bad} flagged" if n_bad else "clean", (0.97, 0.03),
+                xycoords="axes fraction", ha="right", va="bottom", fontsize=11,
+                color="#C0392B" if n_bad else "#2ca25f", fontweight="bold")
+    if note:
+        ax.annotate(note, (0.5, 0.99), xycoords="axes fraction", ha="center", va="top",
+                    fontsize=10, color="#C0392B")
 
-    plot_pulse_overlay draws several muscles too, but only at one shared intensity; here every
-    muscle sits at its own, which is what the analysis actually uses.
 
-    An intensity picked in one block may not exist in another (the ladders differ between
-    blocks); `nearest` then shows the closest intensity that was recorded, said so on the
-    panel, rather than leaving it blank.
+def _blank_panel(ax, msg):
+    ax.annotate(msg, (0.5, 0.5), xycoords="axes fraction", ha="center", va="center",
+                color="0.5", fontsize=11)
+    ax.set_xticks([]); ax.set_yticks([])
+    for sp in ("top", "right", "left", "bottom"):
+        ax.spines[sp].set_visible(False)
+
+
+def fig_detection_grid(recordings, MT, muscles, edge_ms=1.0, jitter_ms=0.5, xlim_ms=None,
+                       nearest=True, title=None, save=None, **kw):
+    """ONE figure, laid out like fig_threshold_grid: a row per recording, a column per muscle,
+    each panel that muscle's 10 pulses at ITS own threshold with the max (v) and min (^) the
+    peak-to-peak is made of.
+
+    recordings : {row label: csv}
+    MT         : {row label: {muscle: mA}}, or one {muscle: mA} used for every row.
 
     Shaded green = the response window. Shaded red = the only places a max/min can be taken,
     +-`anchor_win_ms` around the train's own average latency; a peak outside those is skipped
     however clear it looks. Red ring = flagged (on a window border, or at a different latency).
+
+    An intensity picked in one recording may not exist in another (the ladders differ between
+    blocks); `nearest` then shows the closest intensity that was recorded, said so on the panel,
+    rather than leaving it blank.
     """
     from .burst import burst_p2p, detection_flags
-    meta, t, sig = load_run(csv)
-    chans = [c for c in sig if c != "Trigger A"]
-    res = burst_p2p(meta, t, sig, chans, **kw)
-    raw = burst_p2p(meta, t, sig, chans, **{**kw, "min_snr": None, "max_edge_frac": None})
-    flags, _ = detection_flags(res, chans, edge_ms, jitter_ms)
-    amps, onset, ipi = list(res["amps"]), res["pulse_ms"], res["ipi_ms"]
+    rows = list(recordings)
+    per_row = MT if rows and rows[0] in MT else {lab: MT for lab in rows}
     cmap = plt.get_cmap("viridis")
-
     with plt.rc_context(PAPER_RC):
-        fig, axes = plt.subplots(1, len(muscles), squeeze=False,
-                                 figsize=(4.0 * len(muscles), 4.0))
-        for ax, m in zip(axes[0], muscles):
-            ch = next((c for c in chans if pretty(c) == m), None)
-            th = MT.get(m)
-            # MT is the BASELINE threshold, and a later block may have been recorded on a
-            # different ladder (P03's VIB ON steps 10 mA where its baseline steps 5), so the
-            # exact mA can be missing from a recording where the muscle was picked perfectly
-            # well. Say so, and show the nearest intensity that was recorded instead of a
-            # blank panel - labelled, because it is not the intensity the analysis uses.
-            note = None
-            if ch is not None and th and th not in amps and nearest and len(amps):
-                got = min(amps, key=lambda a: abs(a - th))
-                note, th = f"{th:g} mA not recorded here — showing {got:g}", got
-            if ch is None or not th or th not in amps:
-                ax.set_title(m, fontweight="bold")
-                msg = ("no channel" if ch is None else
-                       "no threshold\nfor this muscle" if not th else
-                       f"{th:g} mA not recorded here\nthis block has "
-                       f"{min(amps):g}–{max(amps):g} mA")
-                ax.annotate(msg, (0.5, 0.5), xycoords="axes fraction", ha="center", va="center",
-                            color="0.5"); ax.set_xticks([]); ax.set_yticks([])
-                for sp in ("top", "right", "left", "bottom"):
-                    ax.spines[sp].set_visible(False)
-                continue
-            w = amps.index(th)
-            a_rel, b_rel = np.array(res["wins"][ch][0]) - onset[0]
-            hi = xlim_ms or (b_rel + 2)
-            ax.axvspan(a_rel, min(b_rel, hi), color="#2ca25f", alpha=0.10, zorder=0)
-            at = res.get("anchor_t", {}).get(ch)
-            if at is not None and np.isfinite(at[w]).all():
-                for c_ in at[w]:
-                    ax.axvspan(c_ - res["anchor_win_ms"], c_ + res["anchor_win_ms"],
-                               color="#C0392B", alpha=0.10, zorder=0)
-            for k in range(len(onset)):
-                seg = (t >= onset[k] - 2) & (t <= onset[k] + ipi)
-                ax.plot(t[seg] - onset[k], sig[ch][w][seg], lw=0.9, alpha=0.85,
-                        color=cmap(k / max(len(onset) - 1, 1)), zorder=2)
-            for key, mk in (("max", "v"), ("min", "^")):
-                tt = raw[f"t{key}"][ch][w] - onset[:len(raw[f"t{key}"][ch][w])]
-                yy = raw[f"y{key}"][ch][w]
-                ax.plot(tt, yy, mk, ms=7, color="#333333", mec="white", mew=0.8, zorder=5)
-                bad = np.asarray(flags[ch])[w][:len(tt)]
-                if bad.any():
-                    ax.plot(tt[bad], yy[bad], mk, ms=11, mfc="none", mec="#C0392B", mew=1.8,
-                            zorder=6)
-            ax.axvline(0, color="#C0392B", lw=1.2, alpha=0.8, zorder=1)
-            ax.set_xlim(-2, hi)
-            ax.set_title(f"{m}\n{th:g} mA", fontweight="bold", fontsize=13)
-            if note:
-                ax.annotate(note, (0.5, 0.99), xycoords="axes fraction", ha="center", va="top",
-                            fontsize=11, color="#C0392B")
-            ax.set_xlabel("ms from pulse onset", color="0.25")
-            ax.tick_params(colors="0.25")
-            for sp in ("top", "right"):
-                ax.spines[sp].set_visible(False)
-            n_bad = int(np.sum(np.asarray(flags[ch])[w]))
-            ax.annotate(f"{n_bad} flagged" if n_bad else "clean", (0.97, 0.03),
-                        xycoords="axes fraction", ha="right", va="bottom", fontsize=12,
-                        color="#C0392B" if n_bad else "#2ca25f", fontweight="bold")
-        axes[0][0].set_ylabel("EMG (mV)", color="0.25")
+        fig, axes = plt.subplots(len(rows), len(muscles), squeeze=False,
+                                 figsize=(3.3 * len(muscles) + 1.2, 2.9 * len(rows)))
+        for r, lab in enumerate(rows):
+            meta, t, sig = load_run(recordings[lab])
+            chans = [c for c in sig if c != "Trigger A"]
+            res = burst_p2p(meta, t, sig, chans, **kw)
+            raw = burst_p2p(meta, t, sig, chans,
+                            **{**kw, "min_snr": None, "max_edge_frac": None})
+            flags, _ = detection_flags(res, chans, edge_ms, jitter_ms)
+            amps = list(res["amps"])
+            for c, m in enumerate(muscles):
+                ax = axes[r][c]
+                ch = next((x for x in chans if pretty(x) == m), None)
+                th = per_row.get(lab, {}).get(m)
+                # the threshold may come from another block, whose ladder can differ - say so
+                # and show the nearest intensity this recording actually delivered
+                note = None
+                if ch is not None and th and th not in amps and nearest and amps:
+                    got = min(amps, key=lambda a: abs(a - th))
+                    note, th = f"{th:g} mA not recorded — showing {got:g}", got
+                if ch is None or not th or th not in amps:
+                    _blank_panel(ax, "no channel" if ch is None else
+                                     "not picked" if not th else
+                                     f"{th:g} mA not recorded here\n"
+                                     f"{min(amps):g}–{max(amps):g} mA in this block")
+                else:
+                    _detection_panel(ax, t, sig, ch, res, raw, flags, amps.index(th), th, note,
+                                     xlim_ms, cmap)
+                    ax.tick_params(labelsize=11, colors="0.3")
+                    for sp in ("top", "right"):
+                        ax.spines[sp].set_visible(False)
+                if r == 0:
+                    ax.set_title(m, fontsize=13, fontweight="bold")
+                if c == 0:
+                    ax.set_ylabel(f"{lab}\nEMG (mV)", fontsize=12, color="0.2")
+                if r == len(rows) - 1:
+                    ax.set_xlabel("ms from pulse onset", fontsize=12, color="0.25")
         if title:
-            fig.suptitle(title, fontsize=15, fontweight="bold", y=1.02)
-        fig.tight_layout()
+            fig.suptitle(title, fontsize=15, fontweight="bold", y=1.0)
+        fig.tight_layout(rect=(0, 0, 1, 0.97 if title else 1))
         if save:
             import os
             os.makedirs(os.path.dirname(save), exist_ok=True)
             fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
         plt.show()
-    return res
+
+
+def fig_detection_row(csv, MT, muscles, edge_ms=1.0, jitter_ms=0.5, xlim_ms=None,
+                      nearest=True, title=None, save=None, **kw):
+    """One recording's muscles side by side - fig_detection_grid with a single row."""
+    return fig_detection_grid({"": csv}, MT, muscles, edge_ms=edge_ms,
+                              jitter_ms=jitter_ms, xlim_ms=xlim_ms, nearest=nearest,
+                              title=title, save=save, **kw)
