@@ -384,8 +384,10 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
     h, l = axes[0].get_legend_handles_labels()
     fig.legend(h, l, loc="upper center", ncol=len(subjects), frameon=False, fontsize=12,
                bbox_to_anchor=(0.5, 0.995))
-    fig.text(0.5, -0.02, f"line = mean of all {len(muscles)} muscles (drawn only where every one "
-             f"of them reaches), band = SD", ha="center", fontsize=9.5, color="0.45")
+    fig.text(0.5, -0.10, "intensity is a multiple of each muscle's own motor threshold, so the "
+             "current each protocol needs is divided out\n"
+             f"line = mean of all {len(muscles)} muscles, drawn only where every one reaches; "
+             "band = SD", ha="center", fontsize=12, color="0.45", linespacing=1.5)
     if title:
         fig.suptitle(title, fontweight="bold", y=1.08)
     fig.tight_layout(rect=(0, 0, 1, 0.92))
