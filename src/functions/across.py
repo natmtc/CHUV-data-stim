@@ -608,12 +608,13 @@ def vibration_table(runs, MT, muscles, conditions, base="Baseline", **kw):
     return out
 
 
-def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, colours=None,
+def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, colours=None,
                   title=None, save=None):
     """One panel per participant: every muscle, a bar per condition, as % of that participant's
     own baseline. 100 % = unchanged by the manipulation.
 
     vibrated : {subject: muscle} - the muscle the vibrator was actually on, marked on the axis.
+    site     : {subject: "left wrist extensor"} - where it was in words, for the panel title.
                The vibrator sat on a different muscle and a different side in each participant,
                so the comparison across people is of the CHANGE at the vibrated site, never of
                one participant's "VIB ON extensors" against another's.
@@ -634,10 +635,13 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, colours=Non
                    label=cond if ax is axes[0] else None)
         ax.axhline(100, color="0.35", lw=1.0, ls=(0, (2, 3)), zorder=1)
         vib = (vibrated or {}).get(s)
-        ax.set_xticks(x, [("* " + m if m == vib else m) for m in muscles], rotation=30,
+        ax.set_xticks(x, [(m + "  *" if m == vib else m) for m in muscles], rotation=20,
                       ha="right")
         ax.set_ylabel("% of baseline", color="0.25")
-        ax.set_title(f"{s}" + (f"   * {vib}" if vib else ""), fontweight="bold", loc="left")
+        where = (site or {}).get(s)
+        ax.set_title(f"{s}" + (f"   vibrator on the {where}" if where else
+                               (f"   vibrator on {vib}" if vib else "")),
+                     fontweight="bold", loc="left")
         ax.tick_params(colors="0.25")
         for sp in ("top", "right"):
             ax.spines[sp].set_visible(False)
