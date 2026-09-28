@@ -81,8 +81,9 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
     if not respmask.any():
         respmask = tmask
 
-    if picks is None or set(picks) != set(muscles):
-        picks = {m: np.nan for m in muscles}
+    # keep whatever the reloaded file has for the muscles being shown, instead of throwing the
+    # lot away when the sets differ - showing four muscles of a nine-muscle file is normal
+    picks = {m: (picks or {}).get(m, np.nan) for m in muscles}
 
     def _suggested(m):
         if not suggest:
@@ -277,7 +278,20 @@ def save_threshold_csv(picks, muscles, csv_path, meta=None, out_dir="results", o
         if meta is not None:
             row["electrode"], row["mode"] = meta[0]["electrode"], meta[0]["mode"]
         rows.append(row)
-    pd.DataFrame(rows).to_csv(out_csv, index=False)
+    new = pd.DataFrame(rows)
+
+    # MERGE, never replace: picking a subset of the muscles must not delete the rest. Only the
+    # channels on screen are rewritten; every other row of the file is kept as it was.
+    if os.path.exists(out_csv):
+        old = pd.read_csv(out_csv)
+        keep = old[~old["channel"].isin(list(muscles))]
+        if len(keep):
+            new = pd.concat([new, keep], ignore_index=True)
+            order = list(old["channel"]) + [c for c in muscles if c not in set(old["channel"])]
+            new["_o"] = new["channel"].map({c: i for i, c in enumerate(order)})
+            new = new.sort_values("_o").drop(columns="_o").reset_index(drop=True)
+            print(f"  kept {len(keep)} muscle(s) already in the file that were not on screen")
+    new.to_csv(out_csv, index=False)
     return out_csv
 
 
