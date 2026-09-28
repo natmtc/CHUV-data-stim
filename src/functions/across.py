@@ -15,6 +15,19 @@ from .io import load_run
 from .labels import pretty
 from .burst import burst_p2p, resolve_muscles
 
+# figure-ready defaults: Arial, larger type, no grid. Scoped with plt.rc_context so importing
+# this module never changes anyone else's figures.
+PAPER_RC = {
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+    "font.size": 13, "axes.titlesize": 15, "axes.labelsize": 13,
+    "xtick.labelsize": 12, "ytick.labelsize": 12, "legend.fontsize": 13,
+    "axes.grid": False, "axes.spines.top": False, "axes.spines.right": False,
+}
+# two protocols, and the conditions of the vibration figure
+PROTOCOL_COLOURS = ["#2E6F95", "#E8963C"]                       # blue, amber
+CONDITION_COLOURS = ["#9BA7B0", "#2E6F95", "#E8963C", "#4C9A7A"]  # grey, blue, amber, green
+
 
 def recruitment(csv, muscles, mt, **kw):
     """One recording, normalised: for every muscle, its intensities as multiples of its own
@@ -308,7 +321,7 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
     Returns the reference used and the per-subject values at it.
     """
     names = names or {"burst": "30 Hz burst", "arcex": "ARC-EX"}
-    colours = colours or dict(zip(subjects, ["#1f3b73", "#e6550d", "#2ca25f", "#9467bd"]))
+    colours = colours or dict(zip(subjects, ["#2E6F95", "#E8963C", "#4C9A7A", "#8A6FA8"]))
 
     have = [(s, p, m) for s in subjects for p in protocols
             for m in muscles if curves.get((s, p), {}).get(m) is not None]
@@ -322,7 +335,8 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
     xmax = max(reach.values())
     grid = np.linspace(0, xmax, 90)
 
-    fig, axes = plt.subplots(1, len(protocols), figsize=(5.6 * len(protocols), 4.6),
+    rc = plt.rc_context(PAPER_RC); rc.__enter__()
+    fig, axes = plt.subplots(1, len(protocols), figsize=(5.8 * len(protocols), 4.8),
                              squeeze=False, sharey=True)
     axes = axes[0]
     out = {}
@@ -360,27 +374,26 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
                     va="top", fontsize=9.5, color="0.45",
                     bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.85))
         ax.axhline(100, color="0.85", lw=0.9, zorder=0)
-        ax.set_title(names.get(p, p), fontsize=13, fontweight="bold")
-        ax.set_xlabel("intensity (x motor threshold)", fontsize=11, color="0.2")
+        ax.set_title(names.get(p, p), fontweight="bold")
+        ax.set_xlabel("intensity (x motor threshold)", color="0.25")
         ax.set_xlim(0, xmax)
-        ax.tick_params(labelsize=10, colours="0.3") if False else ax.tick_params(labelsize=10,
-                                                                                colors="0.3")
+        ax.tick_params(colors="0.25")
         for sp in ("top", "right"):
             ax.spines[sp].set_visible(False)
-    axes[0].set_ylabel("% of the response at threshold", fontsize=12, color="0.25")
+    axes[0].set_ylabel("% of the response at threshold", color="0.25")
     h, l = axes[0].get_legend_handles_labels()
     fig.legend(h, l, loc="upper center", ncol=len(subjects), frameon=False, fontsize=12,
                bbox_to_anchor=(0.5, 0.995))
     fig.text(0.5, -0.02, f"line = mean of all {len(muscles)} muscles (drawn only where every one "
              f"of them reaches), band = SD", ha="center", fontsize=9.5, color="0.45")
     if title:
-        fig.suptitle(title, fontsize=15, fontweight="bold", y=1.10)
+        fig.suptitle(title, fontweight="bold", y=1.08)
     fig.tight_layout(rect=(0, 0, 1, 0.92))
     if save:
         import os
         os.makedirs(os.path.dirname(save), exist_ok=True)
         fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
-    plt.show()
+    plt.show(); rc.__exit__(None, None, None)
     print(f"every curve = 100 % at its own threshold ({at_x:g} x MT); each runs as far as its "
           f"sweep went:")
     for s_ in subjects:
@@ -420,8 +433,8 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
     from .burst import burst_p2p, noise_p2p
     from .paper import step_up
     names = names or {"burst": "30 Hz burst", "arcex": "ARC-EX"}
-    colours = colours or {protocols[0]: "#1f3b73", protocols[1]: "#e6550d"}
-    hatch = {protocols[0]: "", protocols[1]: "///"}
+    colours = colours or dict(zip(protocols, PROTOCOL_COLOURS))
+    hatch = {p_: "" for p_ in protocols}
 
     val = {}
     for s in subjects:
@@ -459,7 +472,8 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
     panels = ([("p1_mV", "1st pulse", "mV  (within a subject only)", None)] if with_p1 else []) + \
              [("p2", "2nd pulse", "% of 1st pulse", 100),
               ("rest", f"mean of pulses {rest_from}-{n_pul}", "% of 1st pulse", 100)]
-    fig = plt.figure(figsize=(5.4 * len(panels), 4.4))
+    rc = plt.rc_context(PAPER_RC); rc.__enter__()
+    fig = plt.figure(figsize=(5.4 * len(panels), 4.6))
     axes, base_ax = [], None
     for k, (key, _, _, _) in enumerate(panels):
         ax = fig.add_subplot(1, len(panels), k + 1, sharey=base_ax if key != "p1_mV" else None)
@@ -477,21 +491,16 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
                    edgecolor=("white" if hatch[p] else "none"), lw=0, zorder=2,
                    label=names.get(p, p) if ax is axes[0] else None)
             for xi, v, s_ in zip(x + (j - (len(protocols) - 1) / 2) * w, h, subjects):
-                if np.isfinite(v):
-                    ax.annotate(f"{v:.3f}" if key == "p1_mV" else f"{v:.0f}", (xi, v),
-                                textcoords="offset points", xytext=(0, 3), ha="center",
-                                fontsize=9, color="0.35")
-                elif (s_, p) in val:        # the condition exists, this pulse does not
-                    ax.annotate("pulse\nvoid", (xi, 2), ha="center", va="bottom", fontsize=8,
-                                color="#d62728", style="italic")
+                if not np.isfinite(v) and (s_, p) in val:   # condition exists, pulse does not
+                    ax.annotate("no data", (xi, 2), ha="center", va="bottom", fontsize=11,
+                                color="0.45", style="italic", rotation=90)
         if line:
             ax.axhline(line, color="0.4", lw=0.9, ls=(0, (2, 3)), zorder=1)
         ax.set_xticks(x, subjects, fontsize=12)
         ax.set_title(ttl, fontsize=13, fontweight="bold")
         if ax is axes[0] or (with_p1 and ax is axes[1]):
             ax.set_ylabel(ylab, fontsize=11.5, color="0.25")
-        ax.tick_params(labelsize=10, colors="0.3")
-        ax.grid(True, axis="y", alpha=0.22); ax.set_axisbelow(True)
+        ax.tick_params(colors="0.25")
         for sp in ("top", "right"):
             ax.spines[sp].set_visible(False)
     handles, labels_ = axes[0].get_legend_handles_labels()
@@ -503,13 +512,13 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
         fig.text(0.5, -0.02, "blank = 1st pulse under "
                  f"{min_snr_ratio:g}x noise, too small to divide by  (" + ", ".join(weak) + ")",
                  ha="center", fontsize=9.5, color="#d62728")
-    fig.suptitle(title or muscle, fontsize=15, fontweight="bold", y=1.10)
+    fig.suptitle(title or muscle, fontweight="bold", y=1.09)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     if save:
         import os
         os.makedirs(os.path.dirname(save), exist_ok=True)
         fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
-    plt.show()
+    plt.show(); rc.__exit__(None, None, None)
     print(f"{muscle} - the 1st pulse each bar is a % OF:")
     for (s_, p_), v in sorted(val.items()):
         note = ("   <- 1st pulse too small, bars blank" if v["snr"] < min_snr_ratio else
@@ -567,9 +576,10 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, colours=Non
                so the comparison across people is of the CHANGE at the vibrated site, never of
                one participant's "VIB ON extensors" against another's.
     """
-    colours = colours or ["0.45", "#1f3b73", "#e6550d", "#2ca25f"]
-    fig, axes = plt.subplots(len(subjects), 1, figsize=(1.25 * len(muscles) + 3.5,
-                                                        3.5 * len(subjects)), squeeze=False)
+    colours = colours or CONDITION_COLOURS
+    rc = plt.rc_context(PAPER_RC); rc.__enter__()
+    fig, axes = plt.subplots(len(subjects), 1, figsize=(1.35 * len(muscles) + 3.5,
+                                                        3.7 * len(subjects)), squeeze=False)
     axes = axes.ravel()
     x = np.arange(len(muscles)); w = 0.8 / len(conditions)
     for ax, s in zip(axes, subjects):
@@ -583,22 +593,20 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, colours=Non
         ax.axhline(100, color="0.35", lw=1.0, ls=(0, (2, 3)), zorder=1)
         vib = (vibrated or {}).get(s)
         ax.set_xticks(x, [("* " + m if m == vib else m) for m in muscles], rotation=30,
-                      ha="right", fontsize=10)
-        ax.set_ylabel("% of this subject's baseline", fontsize=11, color="0.25")
-        ax.set_title(f"{s}" + (f"   (* = vibrated: {vib})" if vib else ""), fontsize=13,
-                     fontweight="bold", loc="left")
-        ax.tick_params(labelsize=10, colors="0.3")
-        ax.grid(True, axis="y", alpha=0.22); ax.set_axisbelow(True)
+                      ha="right")
+        ax.set_ylabel("% of baseline", color="0.25")
+        ax.set_title(f"{s}" + (f"   * {vib}" if vib else ""), fontweight="bold", loc="left")
+        ax.tick_params(colors="0.25")
         for sp in ("top", "right"):
             ax.spines[sp].set_visible(False)
     h_, l_ = axes[0].get_legend_handles_labels()
     fig.legend(h_, l_, loc="upper center", ncol=len(conditions), frameon=False, fontsize=11,
                bbox_to_anchor=(0.5, 1.0))
     if title:
-        fig.suptitle(title, fontsize=14, fontweight="bold", y=1.05)
+        fig.suptitle(title, fontweight="bold", y=1.04)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     if save:
         import os
         os.makedirs(os.path.dirname(save), exist_ok=True)
         fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
-    plt.show()
+    plt.show(); rc.__exit__(None, None, None)
