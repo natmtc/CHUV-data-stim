@@ -817,3 +817,85 @@ def fig_threshold_grid(recordings, muscles, xlim=(-20, 130), gain_frac=0.9, titl
                                        f"{(f'{out[lab][m]:g}' if m in out[lab] else '--'):>4s}"
                                        for m in muscles))
     return out
+
+
+# ---------------------------------------------------------------------------
+# 11. one row of panels: how every muscle's peaks are detected, each at its own mA
+# ---------------------------------------------------------------------------
+def fig_detection_row(csv, MT, muscles, edge_ms=1.0, jitter_ms=0.5, xlim_ms=None,
+                      title=None, save=None, **kw):
+    """One panel per muscle, side by side: that muscle's pulses re-aligned on their own onset,
+    at ITS own threshold, with the max (v) and min (^) each peak-to-peak is made of.
+
+    plot_pulse_overlay draws several muscles too, but only at one shared intensity; here every
+    muscle sits at its own, which is what the analysis actually uses.
+
+    Shaded green = the response window. Shaded red = the only places a max/min can be taken,
+    +-`anchor_win_ms` around the train's own average latency; a peak outside those is skipped
+    however clear it looks. Red ring = flagged (on a window border, or at a different latency).
+    """
+    from .burst import burst_p2p, detection_flags
+    meta, t, sig = load_run(csv)
+    chans = [c for c in sig if c != "Trigger A"]
+    res = burst_p2p(meta, t, sig, chans, **kw)
+    raw = burst_p2p(meta, t, sig, chans, **{**kw, "min_snr": None, "max_edge_frac": None})
+    flags, _ = detection_flags(res, chans, edge_ms, jitter_ms)
+    amps, onset, ipi = list(res["amps"]), res["pulse_ms"], res["ipi_ms"]
+    cmap = plt.get_cmap("viridis")
+
+    with plt.rc_context(PAPER_RC):
+        fig, axes = plt.subplots(1, len(muscles), squeeze=False,
+                                 figsize=(4.0 * len(muscles), 4.0))
+        for ax, m in zip(axes[0], muscles):
+            ch = next((c for c in chans if pretty(c) == m), None)
+            th = MT.get(m)
+            if ch is None or not th or th not in amps:
+                ax.set_title(m, fontweight="bold")
+                ax.annotate("no threshold\nin this recording" if ch is not None else "no channel",
+                            (0.5, 0.5), xycoords="axes fraction", ha="center", va="center",
+                            color="0.5"); ax.set_xticks([]); ax.set_yticks([])
+                for sp in ("top", "right", "left", "bottom"):
+                    ax.spines[sp].set_visible(False)
+                continue
+            w = amps.index(th)
+            a_rel, b_rel = np.array(res["wins"][ch][0]) - onset[0]
+            hi = xlim_ms or (b_rel + 2)
+            ax.axvspan(a_rel, min(b_rel, hi), color="#2ca25f", alpha=0.10, zorder=0)
+            at = res.get("anchor_t", {}).get(ch)
+            if at is not None and np.isfinite(at[w]).all():
+                for c_ in at[w]:
+                    ax.axvspan(c_ - res["anchor_win_ms"], c_ + res["anchor_win_ms"],
+                               color="#C0392B", alpha=0.10, zorder=0)
+            for k in range(len(onset)):
+                seg = (t >= onset[k] - 2) & (t <= onset[k] + ipi)
+                ax.plot(t[seg] - onset[k], sig[ch][w][seg], lw=0.9, alpha=0.85,
+                        color=cmap(k / max(len(onset) - 1, 1)), zorder=2)
+            for key, mk in (("max", "v"), ("min", "^")):
+                tt = raw[f"t{key}"][ch][w] - onset[:len(raw[f"t{key}"][ch][w])]
+                yy = raw[f"y{key}"][ch][w]
+                ax.plot(tt, yy, mk, ms=7, color="#333333", mec="white", mew=0.8, zorder=5)
+                bad = np.asarray(flags[ch])[w][:len(tt)]
+                if bad.any():
+                    ax.plot(tt[bad], yy[bad], mk, ms=11, mfc="none", mec="#C0392B", mew=1.8,
+                            zorder=6)
+            ax.axvline(0, color="#C0392B", lw=1.2, alpha=0.8, zorder=1)
+            ax.set_xlim(-2, hi)
+            ax.set_title(f"{m}\n{th:g} mA", fontweight="bold", fontsize=13)
+            ax.set_xlabel("ms from pulse onset", color="0.25")
+            ax.tick_params(colors="0.25")
+            for sp in ("top", "right"):
+                ax.spines[sp].set_visible(False)
+            n_bad = int(np.sum(np.asarray(flags[ch])[w]))
+            ax.annotate(f"{n_bad} flagged" if n_bad else "clean", (0.97, 0.03),
+                        xycoords="axes fraction", ha="right", va="bottom", fontsize=12,
+                        color="#C0392B" if n_bad else "#2ca25f", fontweight="bold")
+        axes[0][0].set_ylabel("EMG (mV)", color="0.25")
+        if title:
+            fig.suptitle(title, fontsize=15, fontweight="bold", y=1.02)
+        fig.tight_layout()
+        if save:
+            import os
+            os.makedirs(os.path.dirname(save), exist_ok=True)
+            fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+        plt.show()
+    return res
