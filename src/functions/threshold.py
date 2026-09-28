@@ -169,13 +169,19 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
             f.savefig(buf, format="png", dpi=100)
             img.value = buf.getvalue()          # swap the picture, add nothing
         cur = picks[m]
-        state["mute"] = True                         # move the slider without re-firing it
+        state["mute"] = True            # move the slider and relabel without re-firing either
         sl.value = float(cur) if cur == cur else float(steps[0])
+        keep = mdrop.value
+        mdrop.options = _opts(); mdrop.value = keep
         state["mute"] = False
 
     # ---- controls (these work with or without ipympl) ----------------------------------
-    mdrop = W.Dropdown(options=[(pretty(m), i) for i, m in enumerate(muscles)], value=0,
-                       description="Muscle")
+    def _opts():
+        return [(("\u2713 " if picks.get(m) == picks.get(m) else "\u2013 ") + pretty(m), i)
+                for i, m in enumerate(muscles)]
+
+    mdrop = W.Dropdown(options=[], value=None, description="Muscle")
+    mdrop.options = _opts(); mdrop.value = 0
     sl = W.SelectionSlider(options=[(f"{a:g} mA", float(a)) for a in steps], value=float(steps[0]),
                            description="threshold", continuous_update=False,
                            style={"description_width": "initial"},
@@ -183,6 +189,11 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
     b_prev = W.Button(description="◀ Prev"); b_next = W.Button(description="Next ▶")
     b_none = W.Button(description="No response", button_style="warning")
     b_take = W.Button(description="Take detected", button_style="info")
+    # A SelectionSlider only fires when its value CHANGES. Moving it to the value it already
+    # shows - which is what happens when the muscle you switched to has no pick and the one you
+    # want is the lowest intensity - records nothing, and the muscle saves blank. This button
+    # commits whatever the slider shows, whether or not it moved.
+    b_set = W.Button(description="Set to slider", button_style="primary")
     b_save = W.Button(description="Save", button_style="success", icon="save")
     status = W.HTML("")
 
@@ -213,21 +224,22 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
         mdrop.value = state["mi"]                    # fires on_muscle, which redraws
 
     def on_muscle(ch):
-        if ch["new"] is None:
+        if ch["new"] is None or state["mute"]:
             return
         state["mi"] = int(ch["new"]); draw()
 
     b_prev.on_click(lambda _: go(-1)); b_next.on_click(lambda _: go(+1))
     b_none.on_click(lambda _: _set(np.nan))
     b_save.on_click(do_save)
+    b_set.on_click(lambda _: _set(float(sl.value)))
     b_take.on_click(lambda _: _set(float(_suggested(muscles[state["mi"]]) or np.nan)))
     sl.observe(on_slider, names="value")
     mdrop.observe(on_muscle, names="value")
 
-    row = [mdrop, b_prev, b_next, b_take, b_none] + ([b_save] if on_save else [])
+    row = [mdrop, b_prev, b_next, b_set, b_take, b_none] + ([b_save] if on_save else [])
     panel = W.VBox([W.HBox(row), sl] + ([] if live else [img])
                    + ([W.HBox([status])] if on_save else []))
-    _open(key)["widgets"] = [panel, img, sl, mdrop, b_prev, b_next, b_take, b_none,
+    _open(key)["widgets"] = [panel, img, sl, mdrop, b_prev, b_next, b_set, b_take, b_none,
                              b_save, status]
     clear_output(wait=True)      # drop whatever this cell showed on its last run
     display(panel)
