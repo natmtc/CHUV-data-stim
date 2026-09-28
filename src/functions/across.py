@@ -573,44 +573,77 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
 # ---------------------------------------------------------------------------
 # 7. tendon vibration: every condition as a change from that session's baseline
 # ---------------------------------------------------------------------------
-def vibration_table(runs, MT, muscles, conditions, base="Baseline", **kw):
-    """Per subject, muscle and condition: pulse-1 p2p at that muscle's own motor threshold,
-    and the same as a % of the SAME subject's baseline.
+def vibration_table(runs, MT, muscles, conditions, base="Baseline", match="common", **kw):
+    """Per subject, muscle and condition: pulse-1 p2p at one intensity, and the same as a % of
+    the SAME subject's baseline.
 
     Vibration is a within-session manipulation, so the only honest quantity is the change from
     that session's own baseline - between participants you then compare the *changes*, never the
     amplitudes. runs : {(subject, condition): csv}   MT : {subject: {muscle: mA}} from baseline.
+
+    Every condition of a muscle must be read at ONE intensity, or the bars compare vibration
+    with current. `match` says how that intensity is found:
+
+      "common" (default) the lowest intensity that is >= the baseline threshold AND was
+                         delivered in every block of that participant. Blocks were not always
+                         run on the same ladder - P03's VIB blocks step 10 mA where its
+                         baseline steps 5 - so the exact threshold can be missing from a block
+                         where the muscle responds perfectly well. Moving up one step keeps the
+                         comparison matched and keeps the muscle. The mA used is in the table.
+      "exact"            the baseline threshold itself, and the muscle is dropped from any
+                         block that never delivered it.
     """
     import warnings as _w
     from .io import load_run
     from .burst import burst_p2p
-    out, missing = {}, []
+    kw2 = {k: v for k, v in kw.items() if k not in ("min_snr", "max_edge_frac")}
+    res_of, amps_of, chans_of = {}, {}, {}
     for (s, cond), csv in runs.items():
         meta, t, sig = load_run(csv)
         chans = [c for c in sig if c != "Trigger A"]
-        res = burst_p2p(meta, t, sig, chans, min_snr=None, max_edge_frac=None,
-                        **{k: v for k, v in kw.items()
-                           if k not in ("min_snr", "max_edge_frac")})
-        amps = list(res["amps"])
+        r = burst_p2p(meta, t, sig, chans, min_snr=None, max_edge_frac=None, **kw2)
+        res_of[(s, cond)], amps_of[(s, cond)], chans_of[(s, cond)] = r, list(r["amps"]), chans
+
+    out, missing, moved = {}, [], []
+    subjects = sorted({s for s, _ in runs})
+    for s in subjects:
+        blocks = [(s, c) for c in conditions if (s, c) in runs]
+        shared = set.intersection(*(set(amps_of[b]) for b in blocks)) if blocks else set()
         for m in muscles:
             th = MT.get(s, {}).get(m)
-            ch = next((c for c in chans if pretty(c) == m), None)
-            if ch is None:
-                continue
             if not th:
-                missing.append((s, cond, m, "no threshold in the baseline")); continue
-            if th not in amps:
-                missing.append((s, cond, m, f"{th:g} mA not in this recording "
-                                            f"({amps[0]:g}-{amps[-1]:g}, step "
-                                            f"{amps[1]-amps[0]:g})")); continue
-            with _w.catch_warnings():
-                _w.simplefilter("ignore", RuntimeWarning)
-                y = np.asarray(res["p2p"][ch][amps.index(th)], float)
-                out[(s, cond, m)] = dict(amp=th, p1=float(y[0]),
-                                         rest=float(np.nanmean(y[1:])))
+                missing.append((s, "-", m, "no threshold in the baseline")); continue
+            if match == "exact":
+                use = th if all(th in amps_of[b] for b in blocks) else None
+            else:
+                above = sorted(a for a in shared if a >= th)
+                use = above[0] if above else None
+            if use is None:
+                have = ", ".join(f"{c}: {amps_of[(s, c)][0]:g}-{amps_of[(s, c)][-1]:g} step "
+                                 f"{amps_of[(s, c)][1] - amps_of[(s, c)][0]:g}"
+                                 for _, c in blocks)
+                missing.append((s, "all blocks", m,
+                                f"{th:g} mA threshold, but no intensity at or above it was "
+                                f"delivered in every block ({have})")); continue
+            if use != th:
+                moved.append((s, m, th, use))
+            for _, cond in blocks:
+                ch = next((c for c in chans_of[(s, cond)] if pretty(c) == m), None)
+                if ch is None:
+                    continue
+                with _w.catch_warnings():
+                    _w.simplefilter("ignore", RuntimeWarning)
+                    y = np.asarray(res_of[(s, cond)]["p2p"][ch][amps_of[(s, cond)].index(use)],
+                                   float)
+                    out[(s, cond, m)] = dict(amp=use, p1=float(y[0]),
+                                             rest=float(np.nanmean(y[1:])))
     for (s, cond, m), v in out.items():
         b = out.get((s, base, m))
         v["pct"] = 100 * v["p1"] / b["p1"] if b and np.isfinite(b["p1"]) and b["p1"] > 0 else np.nan
+    if moved:
+        print("read one step above threshold, so that every block has the same intensity:")
+        for s_, m_, th_, use_ in moved:
+            print(f"   {s_}  {m_:22s} threshold {th_:g} mA -> read at {use_:g} mA")
     if missing:
         print("not comparable, so left blank:")
         for s_, c_, m_, why in missing:
