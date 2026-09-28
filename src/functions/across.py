@@ -745,3 +745,75 @@ def warn_if_stale(runs, stamp, used=None):
         print("   (also re-picked, but these figures do not take thresholds from them, so "
               "nothing changes: " + ", ".join(str(k) for k in idle) + ")")
     return bool(matters)
+
+
+# ---------------------------------------------------------------------------
+# 10. the first thing: every chosen threshold, all muscles, one row per participant
+# ---------------------------------------------------------------------------
+def fig_threshold_grid(recordings, muscles, xlim=(-20, 130), gain_frac=0.9, title=None,
+                       save=None):
+    """One row per recording, one column per muscle: every intensity stacked, with the threshold
+    SAVED FOR THAT RECORDING drawn in orange.
+
+    The thresholds are read from `results/<session>/mt_*.csv` directly - not from any MT built
+    elsewhere - so this shows what you actually picked, and nothing can quietly substitute a
+    different value.
+
+    recordings : {row label: csv}. Returns {row label: {muscle: mA}} as read from disk.
+    """
+    from .threshold import mt_file, load_threshold_csv
+    import os
+    rows = list(recordings)
+    fig, axes = plt.subplots(len(rows), len(muscles), squeeze=False,
+                             figsize=(3.3 * len(muscles) + 1.2, 2.9 * len(rows)))
+    out = {}
+    with plt.rc_context(PAPER_RC):
+        for r, lab in enumerate(rows):
+            csv = recordings[lab]
+            picked = load_threshold_csv(mt_file(csv)) if os.path.exists(mt_file(csv)) else {}
+            out[lab] = picked
+            meta, t, sig = load_run(csv)
+            amps = np.array([m["amp_ma"] for m in meta])
+            step = float(np.median(np.diff(np.unique(amps)))) if len(np.unique(amps)) > 1 else 10
+            tmask = (t >= xlim[0]) & (t <= xlim[1])
+            for c, m in enumerate(muscles):
+                ax = axes[r][c]
+                ch = next((x for x in sig if x != "Trigger A" and pretty(x) == m), None)
+                th = picked.get(m)
+                if ch is None:
+                    ax.axis("off"); continue
+                peak = np.percentile(np.abs(sig[ch][:, tmask]), 99.5)
+                gain = (gain_frac * step) / peak if peak > 0 else 1.0
+                for w in range(len(amps)):
+                    on = th is not None and amps[w] == th
+                    ax.plot(t[tmask], sig[ch][w, tmask] * gain + amps[w],
+                            color="#C0392B" if on else "#9A9A9A",
+                            lw=1.8 if on else 0.7, alpha=1.0 if on else 0.55,
+                            zorder=4 if on else 2)
+                ax.set_ylim(amps.min() - step, amps.max() + step)
+                ax.set_xlim(*xlim)
+                ax.set_yticks(np.unique(amps)[::max(1, len(np.unique(amps)) // 5)])
+                ax.tick_params(labelsize=11, colors="0.3")
+                for sp in ("top", "right"):
+                    ax.spines[sp].set_visible(False)
+                if r == 0:
+                    ax.set_title(m, fontsize=13, fontweight="bold")
+                if c == 0:
+                    ax.set_ylabel(f"{lab}\nmA", fontsize=12, color="0.2")
+                if r == len(rows) - 1:
+                    ax.set_xlabel("time (ms)", fontsize=12, color="0.25")
+                ax.annotate("not picked" if th is None else f"{th:g} mA", (0.97, 0.03),
+                            xycoords="axes fraction", ha="right", va="bottom", fontsize=12,
+                            color="0.5" if th is None else "#C0392B", fontweight="bold")
+        if title:
+            fig.suptitle(title, fontsize=15, fontweight="bold", y=1.0)
+        fig.tight_layout(rect=(0, 0, 1, 0.97 if title else 1))
+        if save:
+            os.makedirs(os.path.dirname(save), exist_ok=True)
+            fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+        plt.show()
+    for lab in rows:
+        print(f"{lab:26s}" + "  ".join(f"{m.split(' (')[0][:9]}{m[-3:]} "
+                                       f"{(f'{out[lab][m]:g}' if m in out[lab] else '--'):>4s}"
+                                       for m in muscles))
+    return out
