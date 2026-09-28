@@ -192,10 +192,14 @@ def threshold_picker(meta, t, sig, muscles, xlim=(-20, 130), picks=None, suggest
 
     def do_save(_):
         n = sum(1 for v in picks.values() if v == v)
+        blank = [pretty(m) for m in muscles if picks.get(m) != picks.get(m)]
         try:
             where = on_save(picks)
             status.value = (f"<span style='color:#2ca25f'><b>saved</b> {n} of {len(muscles)} "
-                            f"muscles &rarr; {where}</span>")
+                            f"muscles &rarr; {where}</span>"
+                            + (f"<br><span style='color:#d62728'>written as NO RESPONSE: "
+                               + ", ".join(blank) + " - if that was not deliberate, set them and "
+                               "save again</span>" if blank else ""))
         except Exception as e:                       # a refused save must not kill the picker
             status.value = f"<span style='color:#d62728'><b>not saved</b> - {e}</span>"
 
