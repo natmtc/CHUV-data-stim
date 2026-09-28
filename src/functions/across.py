@@ -698,6 +698,12 @@ def check_thresholds(runs, MT, muscle, keys=None, xlim=(-20, 130), names=None, s
                   highlight_label="the trace used", title=lab,
                   save=(f"{save_dir}/check_{lab.replace(' · ', '_')}.png" if save_dir else None))
         amps = sorted({m["amp_ma"] for m in meta})
+        if th not in amps:
+            step = amps[1] - amps[0] if len(amps) > 1 else 0
+            print(f"{lab}: {th:g} mA is NOT in this recording "
+                  f"({amps[0]:g}-{amps[-1]:g}, step {step:g}) - nothing to highlight, and this "
+                  f"condition cannot be compared at that threshold")
+            continue
         i = amps.index(th)
         print(f"{lab}: using {th:g} mA"
               + (f"  (the one below is {amps[i-1]:g} mA" if i else "  (lowest tested")
