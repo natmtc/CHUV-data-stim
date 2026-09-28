@@ -396,12 +396,17 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
 # 6. one muscle, the participants side by side: how big, and how it holds up
 # ---------------------------------------------------------------------------
 def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, colours=None,
-             names=None, min_snr_ratio=1.5, rest_from=2, title=None, save=None, **kw):
+             names=None, min_snr_ratio=1.5, rest_from=2, with_p1=True, title=None,
+             save=None, **kw):
     """One muscle, one figure: participants side by side, a bar per protocol.
 
-    Both panels are % of that condition's OWN 1st pulse, so 100 % = no change along the train:
-    left the 2nd pulse, right the mean of pulses `rest_from`..N. How big the 1st pulse was is
-    printed underneath rather than plotted - it is the denominator, not a result.
+    The ratio panels are % of that condition's OWN 1st pulse, so 100 % = no change along the
+    train: the 2nd pulse, and the mean of pulses `rest_from`..N.
+
+    with_p1 adds a first panel with the 1st pulse itself, in mV - the quantity those percentages
+    are a percentage OF, so a ratio taken off a near-noise response is visible rather than hidden.
+    Read it WITHIN a participant only (30 Hz against ARC-EX, same session, same electrodes);
+    millivolts do not carry between people.
 
     Each muscle is taken at ITS own motor threshold in that recording, `steps` intensities up.
     The two ratio panels divide by the 1st pulse, so a small 1st pulse makes them explode or
@@ -451,23 +456,31 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
                                p2=100 * float(y[1]) / p1, rest=100 * rest / p1, p1_mV=p1)
 
     n_pul = kw.get("n_pulses", 10)
-    panels = [("p2", "2nd pulse", "% of 1st pulse", 100),
+    panels = ([("p1_mV", "1st pulse", "mV  (within a subject only)", None)] if with_p1 else []) + \
+             [("p2", "2nd pulse", "% of 1st pulse", 100),
               ("rest", f"mean of pulses {rest_from}-{n_pul}", "% of 1st pulse", 100)]
-    fig, axes = plt.subplots(1, len(panels), figsize=(5.8 * len(panels), 4.4), sharey=True)
+    fig = plt.figure(figsize=(5.4 * len(panels), 4.4))
+    axes, base_ax = [], None
+    for k, (key, _, _, _) in enumerate(panels):
+        ax = fig.add_subplot(1, len(panels), k + 1, sharey=base_ax if key != "p1_mV" else None)
+        if key != "p1_mV" and base_ax is None:
+            base_ax = ax
+        axes.append(ax)
     x = np.arange(len(subjects)); w = 0.8 / len(protocols)
     for ax, (key, ttl, ylab, line) in zip(axes, panels):
         for j, p in enumerate(protocols):
             h = [val.get((s, p), {}).get(key, np.nan)
-                 if val.get((s, p), {}).get("snr", 0) >= min_snr_ratio else np.nan
-                 for s in subjects]
+                 if (key == "p1_mV" or val.get((s, p), {}).get("snr", 0) >= min_snr_ratio)
+                 else np.nan for s in subjects]
             ax.bar(x + (j - (len(protocols) - 1) / 2) * w, h, width=w * 0.9,
                    facecolor=colours[p], alpha=0.85, hatch=hatch[p],
                    edgecolor=("white" if hatch[p] else "none"), lw=0, zorder=2,
-                   label=names.get(p, p) if key == "p2" else None)
+                   label=names.get(p, p) if ax is axes[0] else None)
             for xi, v, s_ in zip(x + (j - (len(protocols) - 1) / 2) * w, h, subjects):
                 if np.isfinite(v):
-                    ax.annotate(f"{v:.0f}", (xi, v), textcoords="offset points", xytext=(0, 3),
-                                ha="center", fontsize=9, color="0.35")
+                    ax.annotate(f"{v:.3f}" if key == "p1_mV" else f"{v:.0f}", (xi, v),
+                                textcoords="offset points", xytext=(0, 3), ha="center",
+                                fontsize=9, color="0.35")
                 elif (s_, p) in val:        # the condition exists, this pulse does not
                     ax.annotate("pulse\nvoid", (xi, 2), ha="center", va="bottom", fontsize=8,
                                 color="#d62728", style="italic")
@@ -475,8 +488,8 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
             ax.axhline(line, color="0.4", lw=0.9, ls=(0, (2, 3)), zorder=1)
         ax.set_xticks(x, subjects, fontsize=12)
         ax.set_title(ttl, fontsize=13, fontweight="bold")
-        if ax is axes[0]:
-            ax.set_ylabel(ylab, fontsize=12, color="0.25")
+        if ax is axes[0] or (with_p1 and ax is axes[1]):
+            ax.set_ylabel(ylab, fontsize=11.5, color="0.25")
         ax.tick_params(labelsize=10, colors="0.3")
         ax.grid(True, axis="y", alpha=0.22); ax.set_axisbelow(True)
         for sp in ("top", "right"):
