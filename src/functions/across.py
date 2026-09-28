@@ -675,9 +675,14 @@ def _colour(colours, conditions, cond):
 
 
 def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, colours=None,
-                  ylabel="% of baseline", ref=100, titles=None, title=None, save=None):
+                  ylabel="% of baseline", ref=100, ylim=None, titles=None, title=None,
+                  save=None):
     """One panel per participant: every muscle, a bar per condition, as % of that participant's
     own baseline. 100 % = unchanged by the manipulation.
+
+    ylim : (low, high) to fix the axis. A bar past `high` is drawn up to the top with a caret
+           and its real value printed above it, so one outlier cannot flatten every other bar
+           into a stripe. Without it the axis follows the tallest bar, as usual.
 
     vibrated : {subject: muscle} - the muscle the vibrator was actually on, marked on the axis.
     site     : {subject: "left wrist extensor"} - where it was in words, for the panel title.
@@ -696,8 +701,23 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
             h = [tab.get((s, cond, m), {}).get("pct", np.nan) for m in muscles]
             if not np.isfinite(h).any():
                 continue
-            ax.bar(x + (j - (len(conditions) - 1) / 2) * w, h, width=w * 0.9,
-                   color=_colour(colours, conditions, cond), alpha=0.9, zorder=2)
+            col = _colour(colours, conditions, cond)
+            xs = x + (j - (len(conditions) - 1) / 2) * w
+            top = ylim[1] if ylim else None
+            # clip an outlier to the top rather than let it flatten every other bar, and say
+            # in the figure what it really is - a bar drawn to the ceiling is not a value
+            shown = [min(v, top) if (top is not None and np.isfinite(v)) else v for v in h]
+            ax.bar(xs, shown, width=w * 0.9, color=col, alpha=0.9, zorder=2)
+            if top is not None:
+                for xi, v in zip(xs, h):
+                    if np.isfinite(v) and v > top:
+                        ax.plot([xi], [top], "^", ms=6, color=col, clip_on=False, zorder=4)
+                        ax.annotate(f"{v:.0f}", (xi, top), xytext=(0, 7),
+                                    textcoords="offset points", ha="center", va="bottom",
+                                    fontsize=10, color=col, fontweight="bold",
+                                    rotation=90, annotation_clip=False, zorder=4)
+        if ylim is not None:
+            ax.set_ylim(*ylim)
         if ref is not None:
             ax.axhline(ref, color="0.35", lw=1.0, ls=(0, (2, 3)), zorder=1)
         vib = (vibrated or {}).get(s)
