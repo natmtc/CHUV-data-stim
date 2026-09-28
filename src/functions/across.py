@@ -823,12 +823,16 @@ def fig_threshold_grid(recordings, muscles, xlim=(-20, 130), gain_frac=0.9, titl
 # 11. one row of panels: how every muscle's peaks are detected, each at its own mA
 # ---------------------------------------------------------------------------
 def fig_detection_row(csv, MT, muscles, edge_ms=1.0, jitter_ms=0.5, xlim_ms=None,
-                      title=None, save=None, **kw):
+                      nearest=True, title=None, save=None, **kw):
     """One panel per muscle, side by side: that muscle's pulses re-aligned on their own onset,
     at ITS own threshold, with the max (v) and min (^) each peak-to-peak is made of.
 
     plot_pulse_overlay draws several muscles too, but only at one shared intensity; here every
     muscle sits at its own, which is what the analysis actually uses.
+
+    An intensity picked in one block may not exist in another (the ladders differ between
+    blocks); `nearest` then shows the closest intensity that was recorded, said so on the
+    panel, rather than leaving it blank.
 
     Shaded green = the response window. Shaded red = the only places a max/min can be taken,
     +-`anchor_win_ms` around the train's own average latency; a peak outside those is skipped
@@ -849,10 +853,22 @@ def fig_detection_row(csv, MT, muscles, edge_ms=1.0, jitter_ms=0.5, xlim_ms=None
         for ax, m in zip(axes[0], muscles):
             ch = next((c for c in chans if pretty(c) == m), None)
             th = MT.get(m)
+            # MT is the BASELINE threshold, and a later block may have been recorded on a
+            # different ladder (P03's VIB ON steps 10 mA where its baseline steps 5), so the
+            # exact mA can be missing from a recording where the muscle was picked perfectly
+            # well. Say so, and show the nearest intensity that was recorded instead of a
+            # blank panel - labelled, because it is not the intensity the analysis uses.
+            note = None
+            if ch is not None and th and th not in amps and nearest and len(amps):
+                got = min(amps, key=lambda a: abs(a - th))
+                note, th = f"{th:g} mA not recorded here — showing {got:g}", got
             if ch is None or not th or th not in amps:
                 ax.set_title(m, fontweight="bold")
-                ax.annotate("no threshold\nin this recording" if ch is not None else "no channel",
-                            (0.5, 0.5), xycoords="axes fraction", ha="center", va="center",
+                msg = ("no channel" if ch is None else
+                       "no threshold\nfor this muscle" if not th else
+                       f"{th:g} mA not recorded here\nthis block has "
+                       f"{min(amps):g}–{max(amps):g} mA")
+                ax.annotate(msg, (0.5, 0.5), xycoords="axes fraction", ha="center", va="center",
                             color="0.5"); ax.set_xticks([]); ax.set_yticks([])
                 for sp in ("top", "right", "left", "bottom"):
                     ax.spines[sp].set_visible(False)
@@ -881,6 +897,9 @@ def fig_detection_row(csv, MT, muscles, edge_ms=1.0, jitter_ms=0.5, xlim_ms=None
             ax.axvline(0, color="#C0392B", lw=1.2, alpha=0.8, zorder=1)
             ax.set_xlim(-2, hi)
             ax.set_title(f"{m}\n{th:g} mA", fontweight="bold", fontsize=13)
+            if note:
+                ax.annotate(note, (0.5, 0.99), xycoords="axes fraction", ha="center", va="top",
+                            fontsize=11, color="#C0392B")
             ax.set_xlabel("ms from pulse onset", color="0.25")
             ax.tick_params(colors="0.25")
             for sp in ("top", "right"):
