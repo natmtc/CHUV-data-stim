@@ -573,7 +573,8 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
 # ---------------------------------------------------------------------------
 # 7. tendon vibration: every condition as a change from that session's baseline
 # ---------------------------------------------------------------------------
-def vibration_table(runs, MT, muscles, conditions, base="Baseline", match="common", **kw):
+def condition_table(runs, MT, muscles, conditions, base="Baseline", match="common",
+                    group=None, **kw):
     """Per subject, muscle and condition: pulse-1 p2p at one intensity, and the same as a % of
     the SAME subject's baseline.
 
@@ -592,6 +593,12 @@ def vibration_table(runs, MT, muscles, conditions, base="Baseline", match="commo
                          comparison matched and keeps the muscle. The mA used is in the table.
       "exact"            the baseline threshold itself, and the muscle is dropped from any
                          block that never delivered it.
+
+    `group` : {condition: group name}. Conditions in different groups are never compared and
+    never share an intensity - 30 Hz and ARC-EX sit 70 mA apart, so "one intensity for every
+    block" only makes sense inside a protocol. With groups, `MT` may be keyed by (subject,
+    group) so each protocol brings its own thresholds, and `base` may be a
+    {condition: its baseline condition} dict so each protocol is a % of its own control.
     """
     import warnings as _w
     from .io import load_run
@@ -604,15 +611,20 @@ def vibration_table(runs, MT, muscles, conditions, base="Baseline", match="commo
         r = burst_p2p(meta, t, sig, chans, min_snr=None, max_edge_frac=None, **kw2)
         res_of[(s, cond)], amps_of[(s, cond)], chans_of[(s, cond)] = r, list(r["amps"]), chans
 
+    grp_of = group or {c: "" for c in conditions}
+    base_of = base if isinstance(base, dict) else {c: base for c in conditions}
     out, missing, moved = {}, [], []
     subjects = sorted({s for s, _ in runs})
     for s in subjects:
-        blocks = [(s, c) for c in conditions if (s, c) in runs]
-        shared = set.intersection(*(set(amps_of[b]) for b in blocks)) if blocks else set()
+      for g in dict.fromkeys(grp_of.get(c, "") for c in conditions):
+        blocks = [(s, c) for c in conditions if grp_of.get(c, "") == g and (s, c) in runs]
+        if not blocks:
+            continue
+        shared = set.intersection(*(set(amps_of[b]) for b in blocks))
         for m in muscles:
-            th = MT.get(s, {}).get(m)
+            th = (MT.get((s, g)) or MT.get(s) or {}).get(m)
             if not th:
-                missing.append((s, "-", m, "no threshold in the baseline")); continue
+                missing.append((s, g or "-", m, "no threshold in the control block")); continue
             if match == "exact":
                 use = th if all(th in amps_of[b] for b in blocks) else None
             else:
@@ -622,11 +634,11 @@ def vibration_table(runs, MT, muscles, conditions, base="Baseline", match="commo
                 have = ", ".join(f"{c}: {amps_of[(s, c)][0]:g}-{amps_of[(s, c)][-1]:g} step "
                                  f"{amps_of[(s, c)][1] - amps_of[(s, c)][0]:g}"
                                  for _, c in blocks)
-                missing.append((s, "all blocks", m,
+                missing.append((s, g or "all blocks", m,
                                 f"{th:g} mA threshold, but no intensity at or above it was "
                                 f"delivered in every block ({have})")); continue
             if use != th:
-                moved.append((s, m, th, use))
+                moved.append((f"{s} {g}".strip(), m, th, use))
             for _, cond in blocks:
                 ch = next((c for c in chans_of[(s, cond)] if pretty(c) == m), None)
                 if ch is None:
@@ -638,12 +650,12 @@ def vibration_table(runs, MT, muscles, conditions, base="Baseline", match="commo
                     out[(s, cond, m)] = dict(amp=use, p1=float(y[0]),
                                              rest=float(np.nanmean(y[1:])))
     for (s, cond, m), v in out.items():
-        b = out.get((s, base, m))
+        b = out.get((s, base_of.get(cond, base if isinstance(base, str) else cond), m))
         v["pct"] = 100 * v["p1"] / b["p1"] if b and np.isfinite(b["p1"]) and b["p1"] > 0 else np.nan
     if moved:
         print("read one step above threshold, so that every block has the same intensity:")
         for s_, m_, th_, use_ in moved:
-            print(f"   {s_}  {m_:22s} threshold {th_:g} mA -> read at {use_:g} mA")
+            print(f"   {s_:16s} {m_:22s} threshold {th_:g} mA -> read at {use_:g} mA")
     if missing:
         print("not comparable, so left blank:")
         for s_, c_, m_, why in missing:
@@ -651,8 +663,19 @@ def vibration_table(runs, MT, muscles, conditions, base="Baseline", match="commo
     return out
 
 
+# kept so the vibration notebook's name still works: the table is not vibration-specific
+vibration_table = condition_table
+
+
+def _colour(colours, conditions, cond):
+    """colours may be a list in condition order, or a {condition: colour} dict."""
+    if isinstance(colours, dict):
+        return colours[cond]
+    return colours[conditions.index(cond) % len(colours)]
+
+
 def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, colours=None,
-                  title=None, save=None):
+                  ylabel="% of baseline", ref=100, titles=None, title=None, save=None):
     """One panel per participant: every muscle, a bar per condition, as % of that participant's
     own baseline. 100 % = unchanged by the manipulation.
 
@@ -674,15 +697,16 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
             if not np.isfinite(h).any():
                 continue
             ax.bar(x + (j - (len(conditions) - 1) / 2) * w, h, width=w * 0.9,
-                   color=colours[j % len(colours)], alpha=0.9, zorder=2)
-        ax.axhline(100, color="0.35", lw=1.0, ls=(0, (2, 3)), zorder=1)
+                   color=_colour(colours, conditions, cond), alpha=0.9, zorder=2)
+        if ref is not None:
+            ax.axhline(ref, color="0.35", lw=1.0, ls=(0, (2, 3)), zorder=1)
         vib = (vibrated or {}).get(s)
         ax.set_xticks(x, [(m + "  *" if m == vib else m) for m in muscles], rotation=20,
                       ha="right")
-        ax.set_ylabel("% of baseline", color="0.25")
+        ax.set_ylabel(ylabel, color="0.25")
         where = (site or {}).get(s)
-        ax.set_title(f"{s}" + (f"   vibrator on the {where}" if where else
-                               (f"   vibrator on {vib}" if vib else "")),
+        ax.set_title((titles or {}).get(s, f"{s}" + (f"   vibrator on the {where}" if where else
+                     (f"   vibrator on {vib}" if vib else ""))),
                      fontweight="bold", loc="left")
         ax.tick_params(colors="0.25")
         for sp in ("top", "right"):
@@ -690,7 +714,7 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
     from matplotlib.patches import Patch
     drawn = [c_ for c_ in conditions if any((s_, c_, m_) in tab for s_ in subjects
                                             for m_ in muscles)]
-    fig.legend([Patch(facecolor=colours[conditions.index(c_) % len(colours)], alpha=0.9)
+    fig.legend([Patch(facecolor=_colour(colours, conditions, c_), alpha=0.9)
                 for c_ in drawn], drawn, loc="upper center", ncol=len(drawn), frameon=False,
                bbox_to_anchor=(0.5, 1.0))
     if title:
