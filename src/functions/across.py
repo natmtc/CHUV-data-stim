@@ -668,3 +668,37 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
         os.makedirs(os.path.dirname(save), exist_ok=True)
         fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
     plt.show(); rc.__exit__(None, None, None)
+
+
+# ---------------------------------------------------------------------------
+# 8. double-check: is the trace being used really the threshold?
+# ---------------------------------------------------------------------------
+def check_thresholds(runs, MT, muscle, keys=None, xlim=(-20, 130), names=None, save_dir=None):
+    """For one muscle, every recording of the comparison: all its intensities stacked, with the
+    intensity the analysis uses drawn in orange.
+
+    This is the check to run when a bar looks wrong. The orange trace should be the LOWEST one
+    with a clear response - if the traces below it already respond, the threshold is too high; if
+    the orange one is still noise, it is too low. Fix it in notebooks/motor_thresholds/ and re-run.
+
+    runs : {key: csv}   MT : {key: {muscle: mA}}   keys : which to show, default all of runs.
+    """
+    from .plots import waterfall
+    names = names or {}
+    for k in (keys or list(runs)):
+        csv = runs[k]
+        th = (MT.get(k) or {}).get(muscle)
+        meta, t, sig = load_run(csv)
+        chans = resolve_muscles([c for c in sig if c != "Trigger A"], [muscle])
+        lab = " · ".join(names.get(part, str(part)) for part in
+                         (k if isinstance(k, tuple) else (k,)))
+        if not th:
+            print(f"{lab}: no threshold for {muscle} - nothing to check\n"); continue
+        waterfall(meta, t, sig, chans, xlim=xlim, highlight=th,
+                  highlight_label="the trace used", title=lab,
+                  save=(f"{save_dir}/check_{lab.replace(' · ', '_')}.png" if save_dir else None))
+        amps = sorted({m["amp_ma"] for m in meta})
+        i = amps.index(th)
+        print(f"{lab}: using {th:g} mA"
+              + (f"  (the one below is {amps[i-1]:g} mA" if i else "  (lowest tested")
+              + (f", above {amps[i+1]:g} mA)" if i + 1 < len(amps) else ", highest tested)"))
