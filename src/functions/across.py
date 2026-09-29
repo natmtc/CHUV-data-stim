@@ -411,8 +411,8 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
 # 6. one muscle, the participants side by side: how big, and how it holds up
 # ---------------------------------------------------------------------------
 def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, colours=None,
-             names=None, min_snr_ratio=1.5, rest_from=2, with_p1=True, traces=True,
-             trace_ms=None, title=None, save=None, **kw):
+             hatches=None, names=None, min_snr_ratio=1.5, rest_from=2, with_p1=True,
+             traces=True, trace_ms=None, title=None, save=None, **kw):
     """One muscle, one figure: participants side by side, a bar per protocol.
 
     The ratio panels are % of that condition's OWN 1st pulse, so 100 % = no change along the
@@ -440,7 +440,7 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
     from .paper import step_up
     names = names or {"burst": "30 Hz burst", "arcex": "ARC-EX"}
     colours = colours or dict(zip(protocols, PROTOCOL_COLOURS))
-    hatch = {p_: "" for p_ in protocols}
+    hatch = {p_: _hatch(hatches, list(protocols), p_) for p_ in protocols}
 
     val = {}
     for s in subjects:
@@ -674,11 +674,24 @@ def _colour(colours, conditions, cond):
     return colours[conditions.index(cond) % len(colours)]
 
 
+def _hatch(hatches, conditions, cond):
+    """Bar fill pattern per condition - the channel to use when colour already means something
+    else. hatches may be a {condition: pattern} dict, a list in condition order, or None."""
+    if not hatches:
+        return ""
+    if isinstance(hatches, dict):
+        return hatches.get(cond, "")
+    return hatches[conditions.index(cond) % len(hatches)]
+
+
 def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, colours=None,
-                  ylabel="% of baseline", ref=100, ylim=None, titles=None, title=None,
-                  save=None):
+                  hatches=None, ylabel="% of baseline", ref=100, ylim=None, titles=None,
+                  title=None, save=None):
     """One panel per participant: every muscle, a bar per condition, as % of that participant's
     own baseline. 100 % = unchanged by the manipulation.
+
+    hatches : {condition: fill pattern} (e.g. "///") - the channel to carry a second factor
+              when colour is already spoken for, such as polarity under a per-protocol colour.
 
     ylim : (low, high) to fix the axis. A bar past `high` is drawn up to the top with a caret
            and its real value printed above it, so one outlier cannot flatten every other bar
@@ -707,7 +720,9 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
             # clip an outlier to the top rather than let it flatten every other bar, and say
             # in the figure what it really is - a bar drawn to the ceiling is not a value
             shown = [min(v, top) if (top is not None and np.isfinite(v)) else v for v in h]
-            ax.bar(xs, shown, width=w * 0.9, color=col, alpha=0.9, zorder=2)
+            hh = _hatch(hatches, conditions, cond)
+            ax.bar(xs, shown, width=w * 0.9, color=col, alpha=0.9, zorder=2, hatch=hh,
+                   edgecolor="white" if hh else "none", lw=0)
             if top is not None:
                 for xi, v in zip(xs, h):
                     if np.isfinite(v) and v > top:
@@ -734,7 +749,9 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
     from matplotlib.patches import Patch
     drawn = [c_ for c_ in conditions if any((s_, c_, m_) in tab for s_ in subjects
                                             for m_ in muscles)]
-    fig.legend([Patch(facecolor=_colour(colours, conditions, c_), alpha=0.9)
+    fig.legend([Patch(facecolor=_colour(colours, conditions, c_), alpha=0.9,
+                      hatch=_hatch(hatches, conditions, c_),
+                      edgecolor="white" if _hatch(hatches, conditions, c_) else "none")
                 for c_ in drawn], drawn, loc="upper center", ncol=len(drawn), frameon=False,
                bbox_to_anchor=(0.5, 1.0))
     if title:
