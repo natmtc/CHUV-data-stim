@@ -755,6 +755,18 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
     from matplotlib.patches import Patch
     drawn = [c_ for c_ in conditions if any((s_, c_, m_) in tab for s_ in subjects
                                             for m_ in muscles)]
+    if not drawn:
+        # a new session before any threshold is picked: say so rather than die on an empty legend
+        for ax in axes:
+            ax.annotate("nothing to draw yet — no thresholds picked for these muscles",
+                        (0.5, 0.5), xycoords="axes fraction", ha="center", va="center",
+                        color="#C0392B", fontsize=12)
+        if title:
+            fig.suptitle(title, fontweight="bold", y=1.04)
+        fig.tight_layout(rect=(0, 0, 1, 0.96))
+        plt.show(); rc.__exit__(None, None, None)
+        print("no bars: pick the thresholds in the last section, then re-run from section 2")
+        return
     fig.legend([Patch(facecolor=_colour(colours, conditions, c_), alpha=0.9,
                       hatch=_hatch(hatches, conditions, c_),
                       edgecolor="white" if _hatch(hatches, conditions, c_) else "none")

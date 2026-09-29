@@ -74,6 +74,10 @@ SESSIONS = {          # (date folder, subject folder) in tSCS_CHUV_data -> parti
     ("17-07-2026", "P04tscsHealthy"): "P04_2026-07-17_lidocaine",
     ("24-07-2026", "P04tscsHealthy"): "P04_2026-07-24",
     ("24-07-2026", "testSCS"):        "NTA_2026-07-24_polarity_lidocaine",
+    # P06's recordings sit directly in the date folder, with no subject folder, so this one is
+    # keyed on the folder above it. The folder is named 28-08 but the files and the session log
+    # are both 28-09-2026; the session name follows the data, not the folder.
+    ("tSCS_CHUV_data", "28-08-2026"): "P06_2026-09-28_polarity_lidocaine",
 }
 
 
