@@ -503,8 +503,14 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
                    edgecolor=("white" if hatch[p] else "none"), lw=0, zorder=2,
                    label=names.get(p, p) if ax is axes[0] else None)
             for xi, v, s_ in zip(x + (j - (len(protocols) - 1) / 2) * w, h, subjects):
-                if not np.isfinite(v) and (s_, p) in val:   # condition exists, pulse does not
-                    ax.annotate("no data", (xi, 2), ha="center", va="bottom", fontsize=11,
+                # a missing bar has two quite different causes and they were saying the same
+                # thing: the response can be REJECTED for sitting too close to noise, which is
+                # not the same as the pulse having no value at all
+                if not np.isfinite(v) and (s_, p) in val:
+                    weak_ = val[(s_, p)].get("snr", np.nan)
+                    why = (f"< {min_snr_ratio:g}x noise" if np.isfinite(weak_)
+                           and weak_ < min_snr_ratio else "pulse voided")
+                    ax.annotate(why, (xi, 2), ha="center", va="bottom", fontsize=10,
                                 color="0.45", style="italic", rotation=90)
         if line:
             ax.axhline(line, color="0.4", lw=0.9, ls=(0, (2, 3)), zorder=1)
