@@ -591,6 +591,10 @@ def condition_table(runs, MT, muscles, conditions, base="Baseline", match="commo
     """Per subject, muscle and condition: pulse-1 p2p at one intensity, and the same as a % of
     the SAME subject's baseline.
 
+    Each reading also carries how its own train behaves: `dep2` (2nd pulse as % of the 1st) and
+    `dep_rest` (mean of pulses 2..N as % of the 1st). Those are properties of the train itself,
+    not comparisons with a control, so they are read per condition rather than as a change.
+
     Vibration is a within-session manipulation, so the only honest quantity is the change from
     that session's own baseline - between participants you then compare the *changes*, never the
     amplitudes. runs : {(subject, condition): csv}   MT : {subject: {muscle: mA}} from baseline.
@@ -615,14 +619,18 @@ def condition_table(runs, MT, muscles, conditions, base="Baseline", match="commo
     """
     import warnings as _w
     from .io import load_run
-    from .burst import burst_p2p
+    from .burst import burst_p2p, noise_p2p
     kw2 = {k: v for k, v in kw.items() if k not in ("min_snr", "max_edge_frac")}
-    res_of, amps_of, chans_of = {}, {}, {}
+    res_of, amps_of, chans_of, noise_of = {}, {}, {}, {}
     for (s, cond), csv in runs.items():
         meta, t, sig = load_run(csv)
         chans = [c for c in sig if c != "Trigger A"]
         r = burst_p2p(meta, t, sig, chans, min_snr=None, max_edge_frac=None, **kw2)
         res_of[(s, cond)], amps_of[(s, cond)], chans_of[(s, cond)] = r, list(r["amps"]), chans
+        # the noise each reading has to beat, so a percentage built on a near-noise response can
+        # be recognised as such later instead of being averaged in with the rest
+        noise_of[(s, cond)] = noise_p2p(t, sig, chans,
+                                        win_len_ms=r["win"][0][1] - r["win"][0][0])
 
     grp_of = group or {c: "" for c in conditions}
     base_of = base if isinstance(base, dict) else {c: base for c in conditions}
@@ -660,8 +668,17 @@ def condition_table(runs, MT, muscles, conditions, base="Baseline", match="commo
                     _w.simplefilter("ignore", RuntimeWarning)
                     y = np.asarray(res_of[(s, cond)]["p2p"][ch][amps_of[(s, cond)].index(use)],
                                    float)
-                    out[(s, cond, m)] = dict(amp=use, p1=float(y[0]),
-                                             rest=float(np.nanmean(y[1:])))
+                    nb = np.asarray(noise_of[(s, cond)][ch], float)
+                    nb = float(nb[amps_of[(s, cond)].index(use)]) if nb.ndim else float(nb)
+                    p1_, rest_ = float(y[0]), float(np.nanmean(y[1:]))
+                    p2_ = float(y[1]) if len(y) > 1 else np.nan
+                    out[(s, cond, m)] = dict(
+                        amp=use, p1=p1_, p2=p2_, rest=rest_,
+                        snr=(p1_ / nb if nb > 0 else np.nan),
+                        # how the train behaves after its own first pulse - nothing to do with
+                        # the control condition, so these stand on their own
+                        dep2=(100 * p2_ / p1_ if p1_ > 0 else np.nan),
+                        dep_rest=(100 * rest_ / p1_ if p1_ > 0 else np.nan))
     for (s, cond, m), v in out.items():
         b = out.get((s, base_of.get(cond, base if isinstance(base, str) else cond), m))
         v["pct"] = 100 * v["p1"] / b["p1"] if b and np.isfinite(b["p1"]) and b["p1"] > 0 else np.nan
@@ -1059,3 +1076,131 @@ def fig_detection_row(csv, MT, muscles, edge_ms=1.0, jitter_ms=0.5, xlim_ms=None
     return fig_detection_grid({"": csv}, MT, muscles, edge_ms=edge_ms,
                               jitter_ms=jitter_ms, xlim_ms=xlim_ms, nearest=nearest,
                               title=title, save=save, **kw)
+
+
+# ---------------------------------------------------------------------------
+# 12. group summary: one number per muscle, averaged over participants
+# ---------------------------------------------------------------------------
+def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colours=None,
+                      hatches=None, min_snr_ratio=None, ylabel="% of control", ref=100,
+                      ylim=None, labels=None, title=None, save=None):
+    """Mean +- SD over participants, per muscle and per series, with every participant's own
+    value drawn on top of its bar.
+
+    Built to be extended: add a participant to `subjects` and the bars, the error bars and the
+    n underneath all follow. With two or three participants the SD is not worth much on its own,
+    which is exactly why the individual points are always drawn - the bar is a summary of them,
+    never a replacement.
+
+    tab      : {(subject, condition, muscle): {key: value, "snr": ...}} from condition_table, or
+               any dict of that shape.
+    series   : the conditions to summarise, one bar each.
+    base     : {series: its control condition} - a series whose control is itself is skipped,
+               since it is 100 % by construction. None summarises every series given.
+    min_snr_ratio : drop a participant's value when EITHER the reading or the control it is
+               divided by has a 1st pulse under this many times its own noise, and say so
+               underneath. The denominator is where the damage is done. A percentage of a near-noise response
+               is arithmetic, not physiology, and it would drag an average of two or three
+               participants anywhere it liked.
+    """
+    colours = colours or PROTOCOL_COLOURS
+    labels = labels or {}
+    keep = [c for c in series if not (base and base.get(c) == c)]
+    vals, dropped = {}, []
+    for c in keep:
+        for m in muscles:
+            got = []
+            for s in subjects:
+                v = tab.get((s, c, m))
+                if not v or not np.isfinite(v.get(key, np.nan)):
+                    continue
+                # a ratio is only as good as what it divides BY, so the control reading has
+                # to clear the bar too - that is where the near-noise denominators hide
+                snrs = [v.get("snr", np.nan)]
+                ctrl = tab.get((s, base.get(c), m)) if base else None
+                if ctrl:
+                    snrs.append(ctrl.get("snr", np.nan))
+                worst = min((r for r in snrs if np.isfinite(r)), default=np.nan)
+                if min_snr_ratio is not None and np.isfinite(worst) and worst < min_snr_ratio:
+                    dropped.append((s, c, m, worst)); continue
+                got.append((s, float(v[key])))
+            vals[(c, m)] = got
+
+    with plt.rc_context(PAPER_RC):
+        fig, ax = plt.subplots(figsize=(1.9 * len(muscles) + 3.0, 4.8))
+        x = np.arange(len(muscles)); w = 0.8 / max(len(keep), 1)
+        top = ylim[1] if ylim else None
+        for j, c in enumerate(keep):
+            xs = x + (j - (len(keep) - 1) / 2) * w
+            mu = [np.mean([v for _, v in vals[(c, m)]]) if vals[(c, m)] else np.nan
+                  for m in muscles]
+            sd = [np.std([v for _, v in vals[(c, m)]], ddof=1) if len(vals[(c, m)]) > 1 else np.nan
+                  for m in muscles]
+            col, hh = _colour(colours, keep, c), _hatch(hatches, keep, c)
+            shown = [min(v, top) if (top is not None and np.isfinite(v)) else v for v in mu]
+            ax.bar(xs, shown, width=w * 0.88, color=col, alpha=0.9, zorder=2, hatch=hh,
+                   edgecolor="white" if hh else "none", lw=0)
+            for xi, m_, mv, sv in zip(xs, muscles, mu, sd):
+                if np.isfinite(mv) and np.isfinite(sv) and (top is None or mv <= top):
+                    ax.errorbar(xi, mv, yerr=sv, fmt="none", ecolor="0.25", elinewidth=1.2,
+                                capsize=4, zorder=4)
+                if top is not None and np.isfinite(mv) and mv > top:
+                    ax.plot([xi], [top], "^", ms=6, color=col, clip_on=False, zorder=5)
+                    ax.annotate(f"{mv:.0f}", (xi, top), xytext=(0, 7), rotation=90,
+                                textcoords="offset points", ha="center", va="bottom",
+                                fontsize=10, color=col, fontweight="bold",
+                                annotation_clip=False, zorder=5)
+                # every participant on top of the bar: with two or three, the points ARE the result
+                for k, (s_, v_) in enumerate(vals[(c, m_)]):
+                    ax.plot(xi + (k - (len(vals[(c, m_)]) - 1) / 2) * w * 0.28,
+                            min(v_, top) if top is not None else v_, "o", ms=5, mfc="white",
+                            mec="0.2", mew=1.1, zorder=6)
+        if ref is not None:
+            ax.axhline(ref, color="0.35", lw=1.0, ls=(0, (2, 3)), zorder=1)
+        if ylim:
+            ax.set_ylim(*ylim)
+        # n belongs on the bar, not under the muscle: the two series can lose different
+        # participants to the noise filter, and one number for both would be wrong
+        for j, c in enumerate(keep):
+            for xi, m in zip(x + (j - (len(keep) - 1) / 2) * w, muscles):
+                ax.annotate(f"n={len(vals[(c, m)])}", (xi, 0), xytext=(0, 3),
+                            textcoords="offset points", ha="center", va="bottom",
+                            fontsize=9, color="0.35")
+        ax.set_xticks(x, muscles, rotation=20, ha="right")
+        ax.set_ylabel(ylabel, color="0.25")
+        ax.tick_params(colors="0.25")
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        from matplotlib.patches import Patch
+        from matplotlib.lines import Line2D
+        handles = [Patch(facecolor=_colour(colours, keep, c), alpha=0.9,
+                         hatch=_hatch(hatches, keep, c),
+                         edgecolor="white" if _hatch(hatches, keep, c) else "none")
+                   for c in keep]
+        fig.legend(handles + [Line2D([], [], marker="o", ls="none", ms=5, mfc="white",
+                                     mec="0.2", mew=1.1)],
+                   [labels.get(c, c) for c in keep] + ["one participant"],
+                   loc="upper center", ncol=len(keep) + 1, frameon=False,
+                   bbox_to_anchor=(0.5, 1.02))
+        if title:
+            fig.suptitle(title, fontweight="bold", y=1.12)
+        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        if save:
+            import os
+            os.makedirs(os.path.dirname(save), exist_ok=True)
+            fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+        plt.show()
+    if dropped:
+        print(f"left out of the average - the reading or its control is under "
+              f"{min_snr_ratio:g}x its own noise:")
+        for s_, c_, m_, r_ in dropped:
+            print(f"   {s_:16s} {c_:20s} {m_:22s} {r_:.1f} x")
+    for c in keep:
+        for m in muscles:
+            got = vals[(c, m)]
+            if got:
+                print(f"{c:20s} {m:22s} n={len(got)}  "
+                      + "  ".join(f"{s_} {v_:.0f}%" for s_, v_ in got)
+                      + f"   mean {np.mean([v for _, v in got]):.0f}%"
+                      + (f" +- {np.std([v for _, v in got], ddof=1):.0f}" if len(got) > 1 else ""))
+    return vals
