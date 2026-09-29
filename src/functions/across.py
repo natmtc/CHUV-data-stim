@@ -483,7 +483,8 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
               ("rest", f"mean of pulses {rest_from}-{n_pul}", "% of 1st pulse", 100)]
     rc = plt.rc_context(PAPER_RC); rc.__enter__()
     nrow = 2 if traces else 1
-    fig = plt.figure(figsize=(5.4 * len(panels), 4.6 + (3.0 if traces else 0)))
+    fig = plt.figure(figsize=(max(5.4 * len(panels), 3.6 * len(subjects)),
+                              4.6 + (3.0 if traces else 0)))
     gs = fig.add_gridspec(nrow, len(panels), height_ratios=[1, 0.62] if traces else [1],
                           hspace=0.55)
     axes, base_ax = [], None
@@ -514,7 +515,10 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
                                 color="0.45", style="italic", rotation=90)
         if line:
             ax.axhline(line, color="0.4", lw=0.9, ls=(0, (2, 3)), zorder=1)
-        ax.set_xticks(x, subjects, fontsize=12)
+        # names like "P05 · lidocaine" collide once there are more than a couple of them
+        long_ = max((len(str(s_)) for s_ in subjects), default=0) * len(subjects) > 24
+        ax.set_xticks(x, subjects, fontsize=12,
+                      **(dict(rotation=20, ha="right") if long_ else {}))
         ax.set_title(ttl, fontsize=13, fontweight="bold")
         if ax is axes[0] or (with_p1 and ax is axes[1]):
             ax.set_ylabel(ylab, fontsize=11.5, color="0.25")
@@ -538,7 +542,10 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
         fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
     if traces:
         # one panel per participant: the trains the bars were measured from
-        tax = [fig.add_subplot(gs[1, k]) for k in range(min(len(subjects), len(panels)))]
+        # one column per participant, not per bar panel: with more participants than panels the
+        # last ones used to be dropped without a word
+        tgs = gs[1, :].subgridspec(1, len(subjects), wspace=0.25)
+        tax = [fig.add_subplot(tgs[0, k]) for k in range(len(subjects))]
         for ax, s_ in zip(tax, subjects):
             ys = []
             for p_ in protocols:
