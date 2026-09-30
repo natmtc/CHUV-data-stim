@@ -514,7 +514,7 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
                 # not the same as the pulse having no value at all
                 if not np.isfinite(v) and (s_, p) in val:
                     weak_ = val[(s_, p)].get("snr", np.nan)
-                    why = (f"< {min_snr_ratio:g}x noise" if np.isfinite(weak_)
+                    why = (_why_dropped(weak_, min_snr_ratio) if np.isfinite(weak_)
                            and weak_ < min_snr_ratio else "pulse voided")
                     ax.annotate(why, (xi, 2), ha="center", va="bottom", fontsize=10,
                                 color="0.45", style="italic", rotation=90)
@@ -721,6 +721,15 @@ def _colour(colours, conditions, cond):
     return colours[conditions.index(cond) % len(colours)]
 
 
+def _why_dropped(snr, ratio):
+    """Below the bar is not one thing. A train at or under its own noise has NO response to
+    measure; one between that and the criterion has a response too small to divide by. Saying
+    "no data" for both, as this used to, claims something false about the recording."""
+    if not np.isfinite(snr):
+        return "not measured"
+    return "no response" if snr <= 1.0 else f"< {ratio:g}x noise"
+
+
 def _darker(c, f=0.42):
     """A darker shade of a colour, for marks that have to read against a bar of that colour."""
     import matplotlib.colors as mcolors
@@ -739,10 +748,15 @@ def _hatch(hatches, conditions, cond):
 
 
 def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, colours=None,
-                  hatches=None, key="pct", ylabel="% of baseline", ref=100, ylim=None,
-                  titles=None, title=None, save=None):
+                  hatches=None, key="pct", min_snr_ratio=None, ylabel="% of baseline", ref=100,
+                  ylim=None, titles=None, title=None, save=None):
     """One panel per participant: every muscle, a bar per condition, as % of that participant's
     own baseline. 100 % = unchanged by the manipulation.
+
+    min_snr_ratio : leave out a bar whose own 1st pulse, or the control it is divided by, is
+              under this many times its noise, and write on the axis WHICH it was: "no response"
+              at or below noise, "< Nx noise" above it. Without this a percentage built on
+              nothing is drawn as though it meant something.
 
     key : which value in each entry to plot - "pct" (the 1st pulse, the default), "pct_all"
           (the average of the whole train), or any other key condition_table stores.
@@ -761,6 +775,8 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
                one participant's "VIB ON extensors" against another's.
     """
     colours = colours or CONDITION_COLOURS
+    # which condition each one is a percentage OF, so the denominator can be checked too
+    base_of = {c: conditions[0] for c in conditions}
     rc = plt.rc_context(PAPER_RC); rc.__enter__()
     fig, axes = plt.subplots(len(subjects), 1, figsize=(1.35 * len(muscles) + 3.5,
                                                         3.7 * len(subjects)), squeeze=False)
@@ -768,8 +784,23 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
     x = np.arange(len(muscles)); w = 0.8 / len(conditions)
     for ax, s in zip(axes, subjects):
         for j, cond in enumerate(conditions):
-            h = [tab.get((s, cond, m), {}).get(key, np.nan) for m in muscles]
-            if not np.isfinite(h).any():
+            h, notes = [], []
+            for m in muscles:
+                v = tab.get((s, cond, m), {})
+                val = v.get(key, np.nan)
+                worst = np.nan
+                if min_snr_ratio is not None and v:
+                    rs = [v.get("snr", np.nan)]
+                    ctrl = tab.get((s, base_of.get(cond), m)) if base_of else None
+                    if ctrl:
+                        rs.append(ctrl.get("snr", np.nan))
+                    fin = [r for r in rs if np.isfinite(r)]
+                    worst = min(fin) if fin else np.nan
+                    if np.isfinite(worst) and worst < min_snr_ratio:
+                        notes.append((m, _why_dropped(worst, min_snr_ratio)))
+                        val = np.nan
+                h.append(val)
+            if not np.isfinite(h).any() and not notes:
                 continue
             col = _colour(colours, conditions, cond)
             xs = x + (j - (len(conditions) - 1) / 2) * w
@@ -788,6 +819,10 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
                                     textcoords="offset points", ha="center", va="bottom",
                                     fontsize=10, color=col, fontweight="bold",
                                     rotation=90, annotation_clip=False, zorder=4)
+            for m_, why in notes:
+                ax.annotate(why, (x[muscles.index(m_)] + (j - (len(conditions) - 1) / 2) * w, 2),
+                            ha="center", va="bottom", fontsize=10, color="0.45",
+                            style="italic", rotation=90, zorder=5)
         if ylim is not None:
             ax.set_ylim(*ylim)
         if ref is not None:
@@ -1157,7 +1192,7 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
                     snrs.append(ctrl.get("snr", np.nan))
                 worst = min((r for r in snrs if np.isfinite(r)), default=np.nan)
                 if min_snr_ratio is not None and np.isfinite(worst) and worst < min_snr_ratio:
-                    dropped.append((s, c, m, worst)); continue
+                    dropped.append((s, c, m, worst, _why_dropped(worst, min_snr_ratio))); continue
                 got.append((s, float(v[key])))
             vals[(c, m)] = got
 
@@ -1254,8 +1289,8 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
     if dropped:
         print(f"left out of the average - the reading or its control is under "
               f"{min_snr_ratio:g}x its own noise:")
-        for s_, c_, m_, r_ in dropped:
-            print(f"   {s_:16s} {c_:20s} {m_:22s} {r_:.1f} x")
+        for s_, c_, m_, r_, why_ in dropped:
+            print(f"   {s_:16s} {c_:20s} {m_:22s} {r_:5.1f} x   {why_}")
     for c in keep:
         for m in muscles:
             got = vals[(c, m)]
