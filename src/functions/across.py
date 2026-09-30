@@ -411,16 +411,21 @@ def fig_across_subjects(curves, muscles, subjects, protocols=("burst", "arcex"),
 # 6. one muscle, the participants side by side: how big, and how it holds up
 # ---------------------------------------------------------------------------
 def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, colours=None,
-             hatches=None, names=None, min_snr_ratio=1.5, rest_from=2, with_p1=True,
-             traces=True, trace_ms=None, title=None, save=None, **kw):
+             hatches=None, linestyles=None, names=None, min_snr_ratio=1.5, rest_from=2,
+             with_p1=True, traces=True, trace_ms=None, title=None, save=None, **kw):
     """One muscle, one figure: participants side by side, a bar per protocol.
 
     The ratio panels are % of that condition's OWN 1st pulse, so 100 % = no change along the
     train: the 2nd pulse, and the mean of pulses `rest_from`..N.
 
     traces adds a row underneath: the EMG of that muscle at the very intensity the bars are
-    measured from, one panel per participant, both protocols overlaid in the bar colours - so the
+    measured from, one panel per participant, every condition overlaid in the bar colours - so the
     numbers can be read against the signal they came from.
+
+    A hatch separates two conditions that share a colour in the BARS, but a line has no hatch:
+    `linestyles` ({condition: "-", "--", ...}) is what separates them in the trace row. Without
+    it, two conditions of the same colour are drawn on top of each other and cannot be told
+    apart.
 
     with_p1 adds a first panel with the 1st pulse itself, in mV - the quantity those percentages
     are a percentage OF, so a ratio taken off a near-noise response is visible rather than hidden.
@@ -553,7 +558,9 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
                 if not v or "y" not in v:
                     continue
                 m_ = v["t"] <= (trace_ms or v["t"].max())
-                ax.plot(v["t"][m_], v["y"][m_], "-", color=colours[p_], lw=1.0, alpha=0.9)
+                ls_ = (linestyles or {}).get(p_, "-") if isinstance(linestyles, dict) else "-"
+                ax.plot(v["t"][m_], v["y"][m_], ls=ls_, color=colours[p_],
+                        lw=1.3 if ls_ != "-" else 1.0, alpha=0.9)
                 ys.append(v["y"][m_])
             ax.set_title(s_, fontweight="bold", pad=4)
             ax.set_xlabel("time (ms)", color="0.25")
