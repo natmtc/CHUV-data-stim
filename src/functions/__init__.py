@@ -11,7 +11,7 @@ from .across import (recruitment, fig_threshold_ratio, fig_recruitment,
                      fig_across_subjects, fig_bars,
                      vibration_table, condition_table, fig_vibration, check_thresholds,
                      mt_stamp, warn_if_stale, fig_threshold_grid,
-                     fig_detection_row, fig_detection_grid, fig_group_summary)
+                     fig_detection_row, fig_detection_grid, fig_group_summary, fig_group_panels)
 from .burst import (burst_p2p, normalize_burst, artifact_extent, clipped_channels,
                     plot_burst_windows, plot_burst_p2p, compare_burst_p2p, save_burst_csv,
                     first_vs_rest, plot_first_vs_rest, compare_first_vs_rest,
@@ -29,7 +29,7 @@ __all__ = [
     "thresholds_for", "threshold_source", "typical_threshold",
     "recruitment", "fig_threshold_ratio", "fig_recruitment", "fig_selectivity",
     "fig_muscle_grid", "fig_across_subjects", "fig_bars", "vibration_table", "condition_table", "fig_vibration", "check_thresholds",
-    "mt_stamp", "warn_if_stale", "fig_threshold_grid", "fig_detection_row", "fig_detection_grid", "fig_group_summary",
+    "mt_stamp", "warn_if_stale", "fig_threshold_grid", "fig_detection_row", "fig_detection_grid", "fig_group_summary", "fig_group_panels",
     "burst_p2p", "normalize_burst", "artifact_extent", "clipped_channels",
     "plot_burst_windows", "plot_burst_p2p",
     "compare_burst_p2p", "save_burst_csv",

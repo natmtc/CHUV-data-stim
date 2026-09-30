@@ -1097,7 +1097,8 @@ def fig_detection_row(csv, MT, muscles, edge_ms=1.0, jitter_ms=0.5, xlim_ms=None
 # ---------------------------------------------------------------------------
 def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colours=None,
                       hatches=None, min_snr_ratio=None, ylabel="% of control", ref=100,
-                      ylim=None, labels=None, reference=None, err="sd", title=None, save=None):
+                      ylim=None, labels=None, reference=None, err="sd", ax=None, legend=True,
+                      title=None, save=None):
     """Mean +- SD over participants, per muscle and per series, with every participant's own
     value drawn on top of its bar.
 
@@ -1148,8 +1149,12 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
             vals[(c, m)] = got
 
     nbar = len(keep) + (1 if reference else 0)
+    own = ax is None                       # drawing our own figure, or into someone else's panel
     with plt.rc_context(PAPER_RC):
-        fig, ax = plt.subplots(figsize=(1.9 * len(muscles) + 3.0, 4.8))
+        if own:
+            fig, ax = plt.subplots(figsize=(1.9 * len(muscles) + 3.0, 4.8))
+        else:
+            fig = ax.figure
         x = np.arange(len(muscles)); w = 0.8 / max(nbar, 1)
         if reference:
             rlab, rval = reference
@@ -1212,19 +1217,27 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
                          edgecolor="white" if _hatch(hatches, keep, c) else "none")
                    for c in keep]
         names_ = ([reference[0]] if reference else []) + [labels.get(c, c) for c in keep]
-        fig.legend(handles + [Line2D([], [], marker="o", ls="none", ms=5.5, mfc="0.35",
-                                     mec="white", mew=0.9)],
-                   names_ + ["one participant"],
-                   loc="upper center", ncol=len(names_) + 1, frameon=False,
-                   bbox_to_anchor=(0.5, 1.02))
-        if title:
+        marks = [Line2D([], [], marker="o", ls="none", ms=5.5, mfc="0.35", mec="white", mew=0.9)]
+        if legend and own:
+            fig.legend(handles + marks, names_ + ["one participant"],
+                       loc="upper center", ncol=len(names_) + 1, frameon=False,
+                       bbox_to_anchor=(0.5, 1.02))
+        elif legend:
+            ax.legend(handles + marks, names_ + ["one participant"], loc="lower left",
+                      ncol=len(names_) + 1, frameon=False, fontsize=11,
+                      bbox_to_anchor=(0.0, 1.0))
+        if title and own:
             fig.suptitle(title, fontweight="bold", y=1.12)
-        fig.tight_layout(rect=(0, 0, 1, 0.94))
-        if save:
+        elif title:
+            ax.set_title(title, fontweight="bold", pad=34, loc="left")
+        if own:
+            fig.tight_layout(rect=(0, 0, 1, 0.94))
+        if save and own:
             import os
             os.makedirs(os.path.dirname(save), exist_ok=True)
             fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
-        plt.show()
+        if own:
+            plt.show()
     if dropped:
         print(f"left out of the average - the reading or its control is under "
               f"{min_snr_ratio:g}x its own noise:")
@@ -1239,3 +1252,48 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
                       + f"   mean {np.mean([v for _, v in got]):.0f}%"
                       + (f" +- {np.std([v for _, v in got], ddof=1):.0f}" if len(got) > 1 else ""))
     return vals
+
+
+def fig_group_panels(tab, subjects, muscles, panels, key="dep_rest", colours=None, hatches=None,
+                     min_snr_ratio=None, err="sd", reference=None, labels=None, ylabel="%",
+                     ref=100, ylim=None, quiet=True, title=None, save=None):
+    """Several fig_group_summary panels side by side in ONE figure, sharing a y axis.
+
+    panels : {panel title: [conditions in that panel]} - e.g. one panel per protocol, each
+             holding that protocol's before and with-lidocaine conditions, so the pair can be
+             compared without reading across two separate figures.
+    """
+    out = {}
+    with plt.rc_context(PAPER_RC):
+        fig, axes = plt.subplots(1, len(panels), figsize=(1.6 * len(muscles) * len(panels) + 3.0,
+                                                          5.4), sharey=True)
+        axes = np.atleast_1d(axes)
+        for ax, (ttl, series) in zip(axes, panels.items()):
+            import io, contextlib
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf) if quiet else contextlib.nullcontext():
+                out[ttl] = fig_group_summary(tab, subjects, muscles, series, key=key,
+                                             colours=colours, hatches=hatches,
+                                             min_snr_ratio=min_snr_ratio, err=err,
+                                             reference=reference, labels=labels, ylabel=ylabel,
+                                             ref=ref, ylim=ylim, ax=ax, title=ttl)
+            if not quiet:
+                print(buf.getvalue(), end="")
+        for ax in axes[1:]:
+            ax.set_ylabel("")
+        if title:
+            fig.suptitle(title, fontweight="bold", y=1.10)
+        fig.tight_layout(rect=(0, 0, 1, 0.95))
+        if save:
+            import os
+            os.makedirs(os.path.dirname(save), exist_ok=True)
+            fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+        plt.show()
+    for ttl, vals in out.items():
+        for (c, m), got in vals.items():
+            if got:
+                print(f"{ttl:10s} {c:22s} {m:22s} n={len(got)}  "
+                      + "  ".join(f"{s_} {v_:.0f}%" for s_, v_ in got)
+                      + f"   mean {np.mean([v for _, v in got]):.0f}%"
+                      + (f" +- {np.std([v for _, v in got], ddof=1):.0f}" if len(got) > 1 else ""))
+    return out
