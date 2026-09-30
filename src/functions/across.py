@@ -1083,7 +1083,7 @@ def fig_detection_row(csv, MT, muscles, edge_ms=1.0, jitter_ms=0.5, xlim_ms=None
 # ---------------------------------------------------------------------------
 def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colours=None,
                       hatches=None, min_snr_ratio=None, ylabel="% of control", ref=100,
-                      ylim=None, labels=None, title=None, save=None):
+                      ylim=None, labels=None, reference=None, err="sd", title=None, save=None):
     """Mean +- SD over participants, per muscle and per series, with every participant's own
     value drawn on top of its bar.
 
@@ -1097,6 +1097,13 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
     series   : the conditions to summarise, one bar each.
     base     : {series: its control condition} - a series whose control is itself is skipped,
                since it is 100 % by construction. None summarises every series given.
+    reference : ("label", value) draws a flat bar of that height first in every muscle - the
+               quantity everything else is a percentage OF, so the drop is read against something
+               rather than against the top of the axis. It carries no error bar because it is
+               that value by construction.
+
+    err : "sd" (default) or "sem" - what the error bar shows. Say which in the caption.
+
     min_snr_ratio : drop a participant's value when EITHER the reading or the control it is
                divided by has a 1st pulse under this many times its own noise, and say so
                underneath. The denominator is where the damage is done. A percentage of a near-noise response
@@ -1126,16 +1133,23 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
                 got.append((s, float(v[key])))
             vals[(c, m)] = got
 
+    nbar = len(keep) + (1 if reference else 0)
     with plt.rc_context(PAPER_RC):
         fig, ax = plt.subplots(figsize=(1.9 * len(muscles) + 3.0, 4.8))
-        x = np.arange(len(muscles)); w = 0.8 / max(len(keep), 1)
+        x = np.arange(len(muscles)); w = 0.8 / max(nbar, 1)
+        if reference:
+            rlab, rval = reference
+            ax.bar(x - (nbar - 1) / 2 * w, [rval] * len(muscles), width=w * 0.88,
+                   color="#D9D9D9", alpha=0.95, zorder=2)
         top = ylim[1] if ylim else None
+        off = 1 if reference else 0
         for j, c in enumerate(keep):
-            xs = x + (j - (len(keep) - 1) / 2) * w
+            xs = x + (j + off - (nbar - 1) / 2) * w
             mu = [np.mean([v for _, v in vals[(c, m)]]) if vals[(c, m)] else np.nan
                   for m in muscles]
-            sd = [np.std([v for _, v in vals[(c, m)]], ddof=1) if len(vals[(c, m)]) > 1 else np.nan
-                  for m in muscles]
+            sd = [(np.std([v for _, v in vals[(c, m)]], ddof=1)
+                   / (np.sqrt(len(vals[(c, m)])) if err == "sem" else 1.0))
+                  if len(vals[(c, m)]) > 1 else np.nan for m in muscles]
             col, hh = _colour(colours, keep, c), _hatch(hatches, keep, c)
             shown = [min(v, top) if (top is not None and np.isfinite(v)) else v for v in mu]
             ax.bar(xs, shown, width=w * 0.88, color=col, alpha=0.9, zorder=2, hatch=hh,
@@ -1162,7 +1176,7 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
         # n belongs on the bar, not under the muscle: the two series can lose different
         # participants to the noise filter, and one number for both would be wrong
         for j, c in enumerate(keep):
-            for xi, m in zip(x + (j - (len(keep) - 1) / 2) * w, muscles):
+            for xi, m in zip(x + (j + off - (nbar - 1) / 2) * w, muscles):
                 ax.annotate(f"n={len(vals[(c, m)])}", (xi, 0), xytext=(0, 3),
                             textcoords="offset points", ha="center", va="bottom",
                             fontsize=9, color="0.35")
@@ -1173,14 +1187,16 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
             ax.spines[sp].set_visible(False)
         from matplotlib.patches import Patch
         from matplotlib.lines import Line2D
-        handles = [Patch(facecolor=_colour(colours, keep, c), alpha=0.9,
+        handles = ([Patch(facecolor="#D9D9D9", alpha=0.95)] if reference else []) + \
+                  [Patch(facecolor=_colour(colours, keep, c), alpha=0.9,
                          hatch=_hatch(hatches, keep, c),
                          edgecolor="white" if _hatch(hatches, keep, c) else "none")
                    for c in keep]
+        names_ = ([reference[0]] if reference else []) + [labels.get(c, c) for c in keep]
         fig.legend(handles + [Line2D([], [], marker="o", ls="none", ms=5, mfc="white",
                                      mec="0.2", mew=1.1)],
-                   [labels.get(c, c) for c in keep] + ["one participant"],
-                   loc="upper center", ncol=len(keep) + 1, frameon=False,
+                   names_ + ["one participant"],
+                   loc="upper center", ncol=len(names_) + 1, frameon=False,
                    bbox_to_anchor=(0.5, 1.02))
         if title:
             fig.suptitle(title, fontweight="bold", y=1.12)
