@@ -721,6 +721,26 @@ def _colour(colours, conditions, cond):
     return colours[conditions.index(cond) % len(colours)]
 
 
+def snr_verdict(tab, key_tuple, base_cond, ratio):
+    """What a figure would do with this reading: (value or None, reason or None).
+
+    One place decides it, so a table and the figure beside it cannot tell different stories -
+    which they did until this existed.
+    """
+    s_, c_, m_ = key_tuple
+    v = tab.get(key_tuple)
+    if not v:
+        return None, "not measured"
+    ctrl = tab.get((s_, base_cond, m_))
+    c_snr = ctrl.get("snr", np.nan) if ctrl else np.nan
+    if np.isfinite(c_snr) and c_snr < ratio:
+        return None, "no control"
+    own = v.get("snr", np.nan)
+    if np.isfinite(own) and own < ratio:
+        return 0.0, _why_dropped(own, ratio)
+    return v, None
+
+
 def _why_dropped(snr, ratio):
     """Below the bar is not one thing. A train at or under its own noise has NO response to
     measure; one between that and the criterion has a response too small to divide by. Saying
@@ -748,8 +768,9 @@ def _hatch(hatches, conditions, cond):
 
 
 def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, colours=None,
-                  hatches=None, key="pct", min_snr_ratio=None, ylabel="% of baseline", ref=100,
-                  ylim=None, titles=None, title=None, save=None):
+                  hatches=None, key="pct", min_snr_ratio=None, zero_if_absent=False,
+                  ylabel="% of baseline", ref=100, ylim=None, titles=None, title=None,
+                  save=None):
     """One panel per participant: every muscle, a bar per condition, as % of that participant's
     own baseline. 100 % = unchanged by the manipulation.
 
@@ -757,6 +778,12 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
               under this many times its noise, and write on the axis WHICH it was: "no response"
               at or below noise, "< Nx noise" above it. Without this a percentage built on
               nothing is drawn as though it meant something.
+
+    zero_if_absent : when the READING has no response but the control it is divided by does, draw
+              the bar at 0 and mark it, instead of leaving a gap. A response that disappeared is a
+              result; a gap looks like missing data. When the CONTROL is the one at noise the bar
+              stays out whatever this says, because a ratio with nothing underneath it is not 0,
+              it is undefined.
 
     key : which value in each entry to plot - "pct" (the 1st pulse, the default), "pct_all"
           (the average of the whole train), or any other key condition_table stores.
@@ -794,11 +821,21 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
                     ctrl = tab.get((s, base_of.get(cond), m)) if base_of else None
                     if ctrl:
                         rs.append(ctrl.get("snr", np.nan))
+                    own = v.get("snr", np.nan)
+                    c_snr = ctrl.get("snr", np.nan) if ctrl else np.nan
                     fin = [r for r in rs if np.isfinite(r)]
                     worst = min(fin) if fin else np.nan
-                    if np.isfinite(worst) and worst < min_snr_ratio:
-                        notes.append((m, _why_dropped(worst, min_snr_ratio)))
-                        val = np.nan
+                    ctrl_bad = np.isfinite(c_snr) and c_snr < min_snr_ratio
+                    own_bad = np.isfinite(own) and own < min_snr_ratio
+                    if ctrl_bad:
+                        # nothing to divide by: not zero, undefined
+                        notes.append((m, "no control")); val = np.nan
+                    elif own_bad:
+                        if zero_if_absent:
+                            val = 0.0
+                            notes.append((m, _why_dropped(own, min_snr_ratio)))
+                        else:
+                            notes.append((m, _why_dropped(own, min_snr_ratio))); val = np.nan
                 h.append(val)
             if not np.isfinite(h).any() and not notes:
                 continue
@@ -811,6 +848,10 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
             hh = _hatch(hatches, conditions, cond)
             ax.bar(xs, shown, width=w * 0.9, color=col, alpha=0.9, zorder=2, hatch=hh,
                    edgecolor="white" if hh else "none", lw=0)
+            for xi, val_ in zip(xs, shown):
+                if val_ == 0:          # a bar of zero height would read as a missing bar
+                    ax.plot([xi - w * 0.45, xi + w * 0.45], [0, 0], color=col, lw=3.5,
+                            solid_capstyle="butt", zorder=3)
             if top is not None:
                 for xi, v in zip(xs, h):
                     if np.isfinite(v) and v > top:
