@@ -742,12 +742,18 @@ def snr_verdict(tab, key_tuple, base_cond, ratio):
 
 
 def _why_dropped(snr, ratio):
-    """Below the bar is not one thing. A train at or under its own noise has NO response to
-    measure; one between that and the criterion has a response too small to divide by. Saying
-    "no data" for both, as this used to, claims something false about the recording."""
+    """Why a bar was left out, in terms of what was actually measured.
+
+    Deliberately NOT "no response". All that is known is the size of the response against the
+    noise in THAT recording, and the noise is not a constant: a tendon vibrator strapped over an
+    electrode raises the noise floor of that muscle several fold, so a train can fall under its
+    own noise with its response unchanged. Calling that "no response" states something the data
+    cannot support. The figures say what was measured; whether there is a response is for the
+    traces and the noise table to settle.
+    """
     if not np.isfinite(snr):
         return "not measured"
-    return "no response" if snr <= 1.0 else f"< {ratio:g}x noise"
+    return "under its noise" if snr <= 1.0 else f"< {ratio:g}x noise"
 
 
 def _darker(c, f=0.42):
