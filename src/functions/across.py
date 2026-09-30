@@ -704,6 +704,13 @@ def _colour(colours, conditions, cond):
     return colours[conditions.index(cond) % len(colours)]
 
 
+def _darker(c, f=0.42):
+    """A darker shade of a colour, for marks that have to read against a bar of that colour."""
+    import matplotlib.colors as mcolors
+    r, g, b = mcolors.to_rgb(c)
+    return (r * (1 - f), g * (1 - f), b * (1 - f))
+
+
 def _hatch(hatches, conditions, cond):
     """Bar fill pattern per condition - the channel to use when colour already means something
     else. hatches may be a {condition: pattern} dict, a list in condition order, or None."""
@@ -1156,19 +1163,21 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
                    edgecolor="white" if hh else "none", lw=0)
             for xi, m_, mv, sv in zip(xs, muscles, mu, sd):
                 if np.isfinite(mv) and np.isfinite(sv) and (top is None or mv <= top):
-                    ax.errorbar(xi, mv, yerr=sv, fmt="none", ecolor="0.25", elinewidth=1.2,
-                                capsize=4, zorder=4)
+                    ax.errorbar(xi, mv, yerr=sv, fmt="none", ecolor=_darker(col, 0.25),
+                                elinewidth=1.4, capsize=3.5, capthick=1.4, zorder=4)
                 if top is not None and np.isfinite(mv) and mv > top:
                     ax.plot([xi], [top], "^", ms=6, color=col, clip_on=False, zorder=5)
                     ax.annotate(f"{mv:.0f}", (xi, top), xytext=(0, 7), rotation=90,
                                 textcoords="offset points", ha="center", va="bottom",
                                 fontsize=10, color=col, fontweight="bold",
                                 annotation_clip=False, zorder=5)
-                # every participant on top of the bar: with two or three, the points ARE the result
+                # every participant on top of the bar: with a handful of people the points ARE
+                # the result. They take a darker shade of the bar so it stays obvious which
+                # series each one belongs to when the bars are close together.
                 for k, (s_, v_) in enumerate(vals[(c, m_)]):
-                    ax.plot(xi + (k - (len(vals[(c, m_)]) - 1) / 2) * w * 0.28,
-                            min(v_, top) if top is not None else v_, "o", ms=5, mfc="white",
-                            mec="0.2", mew=1.1, zorder=6)
+                    ax.plot(xi + (k - (len(vals[(c, m_)]) - 1) / 2) * w * 0.30,
+                            min(v_, top) if top is not None else v_, "o", ms=5.5,
+                            mfc=_darker(col), mec="white", mew=0.9, zorder=6)
         if ref is not None:
             ax.axhline(ref, color="0.35", lw=1.0, ls=(0, (2, 3)), zorder=1)
         if ylim:
@@ -1176,10 +1185,13 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
         # n belongs on the bar, not under the muscle: the two series can lose different
         # participants to the noise filter, and one number for both would be wrong
         for j, c in enumerate(keep):
+            col = _colour(colours, keep, c)
             for xi, m in zip(x + (j + off - (nbar - 1) / 2) * w, muscles):
-                ax.annotate(f"n={len(vals[(c, m)])}", (xi, 0), xytext=(0, 3),
+                # white inside the bar: a dark label on a dark bar is unreadable, and these
+                # bars are coloured by protocol so their shade is not ours to choose
+                ax.annotate(f"n={len(vals[(c, m)])}", (xi, 0), xytext=(0, 4),
                             textcoords="offset points", ha="center", va="bottom",
-                            fontsize=9, color="0.35")
+                            fontsize=9, color="white", fontweight="bold", zorder=7)
         ax.set_xticks(x, muscles, rotation=20, ha="right")
         ax.set_ylabel(ylabel, color="0.25")
         ax.tick_params(colors="0.25")
@@ -1193,8 +1205,8 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
                          edgecolor="white" if _hatch(hatches, keep, c) else "none")
                    for c in keep]
         names_ = ([reference[0]] if reference else []) + [labels.get(c, c) for c in keep]
-        fig.legend(handles + [Line2D([], [], marker="o", ls="none", ms=5, mfc="white",
-                                     mec="0.2", mew=1.1)],
+        fig.legend(handles + [Line2D([], [], marker="o", ls="none", ms=5.5, mfc="0.35",
+                                     mec="white", mew=0.9)],
                    names_ + ["one participant"],
                    loc="upper center", ncol=len(names_) + 1, frameon=False,
                    bbox_to_anchor=(0.5, 1.02))
