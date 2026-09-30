@@ -598,6 +598,10 @@ def condition_table(runs, MT, muscles, conditions, base="Baseline", match="commo
     """Per subject, muscle and condition: pulse-1 p2p at one intensity, and the same as a % of
     the SAME subject's baseline.
 
+    `pct` compares the 1st pulses, `pct_all` the average of all N pulses - the first included -
+    so a manipulation that leaves the first response alone but changes the rest of the train is
+    not missed.
+
     Each reading also carries how its own train behaves: `dep2` (2nd pulse as % of the 1st) and
     `dep_rest` (mean of pulses 2..N as % of the 1st). Those are properties of the train itself,
     not comparisons with a control, so they are read per condition rather than as a change.
@@ -679,8 +683,9 @@ def condition_table(runs, MT, muscles, conditions, base="Baseline", match="commo
                     nb = float(nb[amps_of[(s, cond)].index(use)]) if nb.ndim else float(nb)
                     p1_, rest_ = float(y[0]), float(np.nanmean(y[1:]))
                     p2_ = float(y[1]) if len(y) > 1 else np.nan
+                    all_ = float(np.nanmean(y))        # all N pulses, the 1st included
                     out[(s, cond, m)] = dict(
-                        amp=use, p1=p1_, p2=p2_, rest=rest_,
+                        amp=use, p1=p1_, p2=p2_, rest=rest_, mean_all=all_,
                         snr=(p1_ / nb if nb > 0 else np.nan),
                         # how the train behaves after its own first pulse - nothing to do with
                         # the control condition, so these stand on their own
@@ -689,6 +694,11 @@ def condition_table(runs, MT, muscles, conditions, base="Baseline", match="commo
     for (s, cond, m), v in out.items():
         b = out.get((s, base_of.get(cond, base if isinstance(base, str) else cond), m))
         v["pct"] = 100 * v["p1"] / b["p1"] if b and np.isfinite(b["p1"]) and b["p1"] > 0 else np.nan
+        # the same comparison on the whole train rather than its first pulse: the average of all
+        # N pulses, as a % of the control's average. A manipulation can leave the first response
+        # alone and still change what the train delivers overall.
+        v["pct_all"] = (100 * v["mean_all"] / b["mean_all"]
+                        if b and np.isfinite(b["mean_all"]) and b["mean_all"] > 0 else np.nan)
     if moved:
         print("read one step above threshold, so that every block has the same intensity:")
         for s_, m_, th_, use_ in moved:
