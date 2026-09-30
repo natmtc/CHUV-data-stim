@@ -78,6 +78,9 @@ SESSIONS = {          # (date folder, subject folder) in tSCS_CHUV_data -> parti
     # keyed on the folder above it. The folder is named 28-08 but the files and the session log
     # are both 28-09-2026; the session name follows the data, not the folder.
     ("tSCS_CHUV_data", "28-08-2026"): "P06_2026-09-28_polarity_lidocaine",
+    # P06's second session. Its folder also holds a copy of all 32 recordings from 28-09; only
+    # the files stamped 20260929 belong to this session, and the notebooks name them explicitly.
+    ("tSCS_CHUV_data", "29-09-2026"): "P06_2026-09-29_tendon_vibration",
 }
 
 

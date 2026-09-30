@@ -739,10 +739,13 @@ def _hatch(hatches, conditions, cond):
 
 
 def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, colours=None,
-                  hatches=None, ylabel="% of baseline", ref=100, ylim=None, titles=None,
-                  title=None, save=None):
+                  hatches=None, key="pct", ylabel="% of baseline", ref=100, ylim=None,
+                  titles=None, title=None, save=None):
     """One panel per participant: every muscle, a bar per condition, as % of that participant's
     own baseline. 100 % = unchanged by the manipulation.
+
+    key : which value in each entry to plot - "pct" (the 1st pulse, the default), "pct_all"
+          (the average of the whole train), or any other key condition_table stores.
 
     hatches : {condition: fill pattern} (e.g. "///") - the channel to carry a second factor
               when colour is already spoken for, such as polarity under a per-protocol colour.
@@ -765,7 +768,7 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
     x = np.arange(len(muscles)); w = 0.8 / len(conditions)
     for ax, s in zip(axes, subjects):
         for j, cond in enumerate(conditions):
-            h = [tab.get((s, cond, m), {}).get("pct", np.nan) for m in muscles]
+            h = [tab.get((s, cond, m), {}).get(key, np.nan) for m in muscles]
             if not np.isfinite(h).any():
                 continue
             col = _colour(colours, conditions, cond)
