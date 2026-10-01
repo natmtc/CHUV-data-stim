@@ -502,7 +502,8 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
     for ax, (key, ttl, ylab, line) in zip(axes, panels):
         for j, p in enumerate(protocols):
             h = [val.get((s, p), {}).get(key, np.nan)
-                 if (key == "p1_mV" or val.get((s, p), {}).get("snr", 0) >= min_snr_ratio)
+                 if (key == "p1_mV" or min_snr_ratio is None
+                     or val.get((s, p), {}).get("snr", 0) >= min_snr_ratio)
                  else np.nan for s in subjects]
             ax.bar(x + (j - (len(protocols) - 1) / 2) * w, h, width=w * 0.9,
                    facecolor=colours[p], alpha=0.85, hatch=hatch[p],
@@ -514,7 +515,8 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
                 # not the same as the pulse having no value at all
                 if not np.isfinite(v) and (s_, p) in val:
                     weak_ = val[(s_, p)].get("snr", np.nan)
-                    why = (_why_dropped(weak_, min_snr_ratio) if np.isfinite(weak_)
+                    why = (_why_dropped(weak_, min_snr_ratio)
+                           if min_snr_ratio is not None and np.isfinite(weak_)
                            and weak_ < min_snr_ratio else "pulse voided")
                     ax.annotate(why, (xi, 2), ha="center", va="bottom", fontsize=10,
                                 color="0.45", style="italic", rotation=90)
@@ -534,7 +536,7 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
     fig.legend(handles, labels_, loc="upper center", ncol=len(protocols), frameon=False,
                fontsize=12, bbox_to_anchor=(0.5, 0.995))
     weak = [f"{s} {names.get(p, p)}" for (s, p), v in sorted(val.items())
-            if v["snr"] < min_snr_ratio]
+            if min_snr_ratio is not None and v["snr"] < min_snr_ratio]
     if weak:
         fig.text(0.5, -0.02, "blank = 1st pulse under "
                  f"{min_snr_ratio:g}x noise, too small to divide by  (" + ", ".join(weak) + ")",
@@ -583,7 +585,8 @@ def fig_bars(runs, MT, muscle, subjects, protocols=("burst", "arcex"), steps=0, 
     plt.show(); rc.__exit__(None, None, None)
     print(f"{muscle} - the 1st pulse each bar is a % OF:")
     for (s_, p_), v in sorted(val.items()):
-        note = ("   <- 1st pulse too small, bars blank" if v["snr"] < min_snr_ratio else
+        note = ("   <- 1st pulse too small, bars blank"
+                if min_snr_ratio is not None and v["snr"] < min_snr_ratio else
                 "   <- 2nd pulse voided by a dropout" if not np.isfinite(v["p2"]) else "")
         print(f"   {s_:5s} {names.get(p_, p_):12s} {v['amp']:5g} mA   {v['p1_mV']:.4f} mV "
               f"= {v['snr']:5.1f} x its noise" + note)
@@ -731,6 +734,8 @@ def snr_verdict(tab, key_tuple, base_cond, ratio):
     v = tab.get(key_tuple)
     if not v:
         return None, "not measured"
+    if ratio is None:                 # no gate: every reading stands
+        return v, None
     ctrl = tab.get((s_, base_cond, m_))
     c_snr = ctrl.get("snr", np.nan) if ctrl else np.nan
     if np.isfinite(c_snr) and c_snr < ratio:
