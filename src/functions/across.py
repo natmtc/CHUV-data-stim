@@ -1005,8 +1005,8 @@ def warn_if_stale(runs, stamp, used=None):
 # ---------------------------------------------------------------------------
 # 10. the first thing: every chosen threshold, all muscles, one row per participant
 # ---------------------------------------------------------------------------
-def fig_threshold_grid(recordings, muscles, thresholds=None, xlim=(-20, 130), gain_frac=0.9,
-                       title=None, save=None):
+def fig_threshold_grid(recordings, muscles, thresholds=None, used=None, used_label="analysed",
+                       xlim=(-20, 130), gain_frac=0.9, title=None, save=None):
     """One row per recording, one column per muscle: every intensity stacked, with the threshold
     SAVED FOR THAT RECORDING drawn in orange.
 
@@ -1016,10 +1016,13 @@ def fig_threshold_grid(recordings, muscles, thresholds=None, xlim=(-20, 130), ga
 
     recordings : {row label: csv}. Returns {row label: {muscle: mA}} as read from disk.
 
-    thresholds : {row label: {muscle: mA}} to draw INSTEAD of what each recording saved. Use it
-    when the analysis does not read a block at its own pick - a vibration block measured at its
-    control's threshold, say - so the line in the waterfall is the intensity the numbers actually
-    came from rather than one nothing uses.
+    thresholds : {row label: {muscle: mA}} to draw INSTEAD of what each recording saved.
+
+    used : {row label: {muscle: mA}} drawn as a SECOND line, in orange, on top of the red one.
+    This is for the common case where a block is not analysed at its own pick - a vibration block
+    read at its control's threshold - so both can be seen at once: red is what was picked in this
+    recording, orange is the sweep the numbers actually came from. Where they agree only the
+    orange shows.
     """
     from .threshold import mt_file, load_threshold_csv
     import os
@@ -1046,12 +1049,15 @@ def fig_threshold_grid(recordings, muscles, thresholds=None, xlim=(-20, 130), ga
                     ax.axis("off"); continue
                 peak = np.percentile(np.abs(sig[ch][:, tmask]), 99.5)
                 gain = (gain_frac * step) / peak if peak > 0 else 1.0
+                th_u = (used or {}).get(lab, {}).get(m)
                 for w in range(len(amps)):
                     on = th is not None and amps[w] == th
+                    on_u = th_u is not None and amps[w] == th_u
+                    col = "#E67E22" if on_u else ("#C0392B" if on else "#9A9A9A")
                     ax.plot(t[tmask], sig[ch][w, tmask] * gain + amps[w],
-                            color="#C0392B" if on else "#9A9A9A",
-                            lw=1.8 if on else 0.7, alpha=1.0 if on else 0.55,
-                            zorder=4 if on else 2)
+                            color=col, lw=1.8 if (on or on_u) else 0.7,
+                            alpha=1.0 if (on or on_u) else 0.55,
+                            zorder=5 if on_u else (4 if on else 2))
                 ax.set_ylim(amps.min() - step, amps.max() + step)
                 ax.set_xlim(*xlim)
                 ax.set_yticks(np.unique(amps)[::max(1, len(np.unique(amps)) // 5)])
@@ -1067,9 +1073,19 @@ def fig_threshold_grid(recordings, muscles, thresholds=None, xlim=(-20, 130), ga
                 ax.annotate("not picked" if th is None else f"{th:g} mA", (0.97, 0.03),
                             xycoords="axes fraction", ha="right", va="bottom", fontsize=12,
                             color="0.5" if th is None else "#C0392B", fontweight="bold")
+                if th_u is not None and th_u != th:
+                    ax.annotate(f"{th_u:g} mA", (0.97, 0.14), xycoords="axes fraction",
+                                ha="right", va="bottom", fontsize=12, color="#E67E22",
+                                fontweight="bold")
+        if used:
+            from matplotlib.lines import Line2D
+            fig.legend([Line2D([], [], color="#C0392B", lw=2),
+                        Line2D([], [], color="#E67E22", lw=2)],
+                       ["picked in this recording", used_label],
+                       loc="upper center", ncol=2, frameon=False, bbox_to_anchor=(0.5, 1.0))
         if title:
-            fig.suptitle(title, fontsize=15, fontweight="bold", y=1.0)
-        fig.tight_layout(rect=(0, 0, 1, 0.97 if title else 1))
+            fig.suptitle(title, fontsize=15, fontweight="bold", y=1.03 if used else 1.0)
+        fig.tight_layout(rect=(0, 0, 1, 0.96 if used else (0.97 if title else 1)))
         if save:
             os.makedirs(os.path.dirname(save), exist_ok=True)
             fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
