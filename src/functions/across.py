@@ -1397,3 +1397,80 @@ def fig_group_panels(tab, subjects, muscles, panels, key="dep_rest", colours=Non
                       + f"   mean {np.mean([v for _, v in got]):.0f}%"
                       + (f" +- {np.std([v for _, v in got], ddof=1):.0f}" if len(got) > 1 else ""))
     return out
+
+
+# ---------------------------------------------------------------------------
+# 13. is it a small response, or is there nothing there? - judged by eye
+# ---------------------------------------------------------------------------
+def fig_noise_check(csv, muscle, amp, pre=(-95.0, -5.0), title=None, save=None, **kw):
+    """The response windows and the pre-stimulus windows of ONE recording, side by side, on one
+    scale.
+
+    A ratio cannot tell a small response from no response: both come out near 1, and a vibrator
+    or a loose electrode can push a perfectly good response there by raising the noise. What
+    settles it is whether the response window looks different from the silence before the
+    stimulus - so this draws them next to each other and leaves the judgement to the reader.
+
+    left   the N pulses, each re-aligned on its own onset, over the response window
+    right  the same number of windows of the SAME length taken from `pre`, before the stimulus
+    Both panels share a y axis, and each prints its mean peak-to-peak.
+
+    If the two look alike, the "response" is noise. If the left has a deflection at a consistent
+    latency that the right does not, there is a response however small the ratio says it is.
+    """
+    from .burst import burst_p2p, noise_p2p
+    from .io import load_run
+    meta, t, sig = load_run(csv)
+    chans = [c for c in sig if c != "Trigger A"]
+    ch = next((c for c in chans if pretty(c) == muscle), None)
+    res = burst_p2p(meta, t, sig, chans,
+                    **{**kw, "min_snr": None, "max_edge_frac": None})
+    amps = list(res["amps"])
+    if ch is None or amp not in amps:
+        print(f"{muscle} at {amp} mA: not in this recording"); return
+    w = amps.index(amp)
+    onset, ipi = res["pulse_ms"], res["ipi_ms"]
+    a_rel, b_rel = np.array(res["wins"][ch][0]) - onset[0]
+    win = b_rel - a_rel
+
+    resp, base = [], []
+    for k in range(len(onset)):
+        seg = (t >= onset[k] + a_rel) & (t <= onset[k] + b_rel)
+        resp.append((t[seg] - onset[k] - a_rel, sig[ch][w][seg]))
+    starts = np.arange(pre[0], pre[1] - win + 1e-9, win)
+    for a in starts:
+        seg = (t >= a) & (t <= a + win)
+        base.append((t[seg] - a, sig[ch][w][seg]))
+
+    p2p_r = float(np.nanmean([y.max() - y.min() for _, y in resp])) if resp else np.nan
+    p2p_b = float(np.nanmean([y.max() - y.min() for _, y in base])) if base else np.nan
+    lo = min([float(np.nanmin(y)) for _, y in resp + base])
+    hi = max([float(np.nanmax(y)) for _, y in resp + base])
+    pad = (hi - lo) * 0.08
+
+    with plt.rc_context(PAPER_RC):
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4.0), sharey=True)
+        for ax, data, lab, col, p in (
+                (axes[0], resp, f"response window  ({len(resp)} pulses)", "#C0392B", p2p_r),
+                (axes[1], base, f"before the stimulus  ({len(base)} windows)", "0.45", p2p_b)):
+            for x_, y_ in data:
+                ax.plot(x_, y_, lw=0.9, alpha=0.8, color=col)
+            ax.set_title(lab, fontweight="bold", fontsize=13)
+            ax.set_xlabel("ms into the window", color="0.25")
+            ax.annotate(f"mean p2p {p:.4f} mV", (0.97, 0.03), xycoords="axes fraction",
+                        ha="right", va="bottom", fontsize=12, color=col, fontweight="bold")
+            ax.tick_params(colors="0.25")
+            for sp in ("top", "right"):
+                ax.spines[sp].set_visible(False)
+        axes[0].set_ylabel("EMG (mV)", color="0.25")
+        axes[0].set_ylim(lo - pad, hi + pad)
+        r = p2p_r / p2p_b if p2p_b else np.nan
+        fig.suptitle((title or f"{muscle} · {amp:g} mA") + f"    —    {r:.1f}x noise",
+                     fontweight="bold", y=1.04)
+        fig.tight_layout()
+        if save:
+            import os
+            os.makedirs(os.path.dirname(save), exist_ok=True)
+            fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+        plt.show()
+    return p2p_r, p2p_b
