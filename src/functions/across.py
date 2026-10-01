@@ -1005,8 +1005,8 @@ def warn_if_stale(runs, stamp, used=None):
 # ---------------------------------------------------------------------------
 # 10. the first thing: every chosen threshold, all muscles, one row per participant
 # ---------------------------------------------------------------------------
-def fig_threshold_grid(recordings, muscles, xlim=(-20, 130), gain_frac=0.9, title=None,
-                       save=None):
+def fig_threshold_grid(recordings, muscles, thresholds=None, xlim=(-20, 130), gain_frac=0.9,
+                       title=None, save=None):
     """One row per recording, one column per muscle: every intensity stacked, with the threshold
     SAVED FOR THAT RECORDING drawn in orange.
 
@@ -1015,6 +1015,11 @@ def fig_threshold_grid(recordings, muscles, xlim=(-20, 130), gain_frac=0.9, titl
     different value.
 
     recordings : {row label: csv}. Returns {row label: {muscle: mA}} as read from disk.
+
+    thresholds : {row label: {muscle: mA}} to draw INSTEAD of what each recording saved. Use it
+    when the analysis does not read a block at its own pick - a vibration block measured at its
+    control's threshold, say - so the line in the waterfall is the intensity the numbers actually
+    came from rather than one nothing uses.
     """
     from .threshold import mt_file, load_threshold_csv
     import os
@@ -1025,7 +1030,9 @@ def fig_threshold_grid(recordings, muscles, xlim=(-20, 130), gain_frac=0.9, titl
     with plt.rc_context(PAPER_RC):
         for r, lab in enumerate(rows):
             csv = recordings[lab]
-            picked = load_threshold_csv(mt_file(csv)) if os.path.exists(mt_file(csv)) else {}
+            picked = (thresholds[lab] if thresholds and lab in thresholds
+                      else (load_threshold_csv(mt_file(csv)) if os.path.exists(mt_file(csv))
+                            else {}))
             out[lab] = picked
             meta, t, sig = load_run(csv)
             amps = np.array([m["amp_ma"] for m in meta])
