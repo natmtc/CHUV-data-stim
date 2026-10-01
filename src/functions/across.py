@@ -775,8 +775,8 @@ def _hatch(hatches, conditions, cond):
 
 def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, colours=None,
                   hatches=None, key="pct", min_snr_ratio=None, zero_if_absent=False,
-                  ylabel="% of baseline", ref=100, ylim=None, titles=None, title=None,
-                  save=None):
+                  check_control=True, ylabel="% of baseline", ref=100, ylim=None, titles=None,
+                  title=None, save=None):
     """One panel per participant: every muscle, a bar per condition, as % of that participant's
     own baseline. 100 % = unchanged by the manipulation.
 
@@ -784,6 +784,11 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
               under this many times its noise, and write on the axis WHICH it was: "no response"
               at or below noise, "< Nx noise" above it. Without this a percentage built on
               nothing is drawn as though it meant something.
+
+    check_control : whether the control condition's own signal-to-noise has to clear
+              `min_snr_ratio` as well. True for a value that divides by the control ("pct"); False
+              for one that divides by the reading's OWN first pulse ("dep2", "dep_rest"), where
+              the control's quality is irrelevant and gating on it would throw away good data.
 
     zero_if_absent : when the READING has no response but the control it is divided by does, draw
               the bar at 0 and mark it, instead of leaving a gap. A response that disappeared is a
@@ -831,7 +836,7 @@ def fig_vibration(tab, subjects, muscles, conditions, vibrated=None, site=None, 
                     c_snr = ctrl.get("snr", np.nan) if ctrl else np.nan
                     fin = [r for r in rs if np.isfinite(r)]
                     worst = min(fin) if fin else np.nan
-                    ctrl_bad = np.isfinite(c_snr) and c_snr < min_snr_ratio
+                    ctrl_bad = check_control and np.isfinite(c_snr) and c_snr < min_snr_ratio
                     own_bad = np.isfinite(own) and own < min_snr_ratio
                     if ctrl_bad:
                         # nothing to divide by: not zero, undefined
