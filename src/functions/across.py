@@ -1006,7 +1006,7 @@ def warn_if_stale(runs, stamp, used=None):
 # 10. the first thing: every chosen threshold, all muscles, one row per participant
 # ---------------------------------------------------------------------------
 def fig_threshold_grid(recordings, muscles, thresholds=None, used=None, used_label="analysed",
-                       xlim=(-20, 130), gain_frac=0.9, title=None, save=None):
+                       pulses=True, xlim=(-20, 130), gain_frac=0.9, title=None, save=None):
     """One row per recording, one column per muscle: every intensity stacked, with the threshold
     SAVED FOR THAT RECORDING drawn in orange.
 
@@ -1017,6 +1017,10 @@ def fig_threshold_grid(recordings, muscles, thresholds=None, used=None, used_lab
     recordings : {row label: csv}. Returns {row label: {muscle: mA}} as read from disk.
 
     thresholds : {row label: {muscle: mA}} to draw INSTEAD of what each recording saved.
+
+    pulses : draw a thin vertical line at every stimulus onset, read from the trigger channel.
+    Without them a deflection cannot be placed in time and an artifact looks like a response; with
+    them anything riding on a line is the stimulus and anything in between is the muscle.
 
     used : {row label: {muscle: mA}} drawn as a SECOND line, in orange, on top of the red one.
     This is for the common case where a block is not analysed at its own pick - a vibration block
@@ -1039,6 +1043,15 @@ def fig_threshold_grid(recordings, muscles, thresholds=None, used=None, used_lab
             out[lab] = picked
             meta, t, sig = load_run(csv)
             amps = np.array([m["amp_ma"] for m in meta])
+            # where the stimulator fired, off the trigger channel - the only way to tell an
+            # artifact from a response by eye is to know which deflections sit on a pulse
+            onsets = []
+            if pulses and "Trigger A" in sig:
+                v = np.asarray(sig["Trigger A"][len(amps) // 2], float)
+                if np.isfinite(v).any() and np.nanmax(v) > np.nanmin(v):
+                    thr = (np.nanmax(v) + np.nanmin(v)) / 2
+                    k = np.where((v[:-1] < thr) & (v[1:] >= thr))[0]
+                    onsets = [x for x in t[k] if xlim[0] <= x <= xlim[1]]
             step = float(np.median(np.diff(np.unique(amps)))) if len(np.unique(amps)) > 1 else 10
             tmask = (t >= xlim[0]) & (t <= xlim[1])
             for c, m in enumerate(muscles):
@@ -1047,6 +1060,8 @@ def fig_threshold_grid(recordings, muscles, thresholds=None, used=None, used_lab
                 th = picked.get(m)
                 if ch is None:
                     ax.axis("off"); continue
+                for x0 in onsets:
+                    ax.axvline(x0, color="#5A5A5A", lw=0.7, ls=(0, (2, 2)), alpha=0.55, zorder=1)
                 peak = np.percentile(np.abs(sig[ch][:, tmask]), 99.5)
                 gain = (gain_frac * step) / peak if peak > 0 else 1.0
                 th_u = (used or {}).get(lab, {}).get(m)
