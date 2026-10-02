@@ -224,12 +224,17 @@ def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a
     axes = axes.ravel()
     for i, m in enumerate(muscles):
         ax = axes[i]
-        for meta, t, sig, col, ls_ in runs:
+        # the first condition is drawn WIDER and paler, the rest thinner on top of it. With one
+        # width the later traces cover the first exactly wherever the two agree - which is every
+        # flat stretch, before the stimulus and at every sub-threshold intensity - and the first
+        # condition looks absent when it is merely underneath.
+        for j_, (meta, t, sig, col, ls_) in enumerate(runs):
             amps = np.array([x["amp_ma"] for x in meta])
             tmask = (t >= xlim[0]) & (t <= xlim[1])
             for w in range(len(amps)):
-                ax.plot(t[tmask], sig[m][w, tmask] * used[m] + amps[w], color=col, lw=0.9, ls=ls_,
-                        alpha=(0.8 if col == colours[0] else 0.95))
+                ax.plot(t[tmask], sig[m][w, tmask] * used[m] + amps[w], color=col,
+                        lw=2.2 if j_ == 0 else 1.0, ls=ls_,
+                        alpha=0.45 if j_ == 0 else 0.95, zorder=2 + j_)
         for a0, a1 in detect_pulses(t_b, sig_b["Trigger A"]):
             if a1 >= xlim[0] and a0 <= xlim[1]:
                 ax.axvspan(a0, a1, color="red", alpha=0.10, zorder=0)
