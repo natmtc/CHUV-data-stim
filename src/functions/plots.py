@@ -173,7 +173,7 @@ def plot_latency_combined(meta, t, sig, muscles, picks, resp_end=50.0, save=None
 
 
 def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a=None, muscles=None,
-                      xlim=(-20, 80), gains=None, gain_frac=0.9,
+                      xlim=(-20, 80), gains=None, gain_frac=0.9, row_h=0.17, ncol=4,
                       labels=("before lidocaine", "with lidocaine"), colours=None, linestyles=None,
                       title=None, save=None):
     """Per-muscle waterfall with several recordings on the same panel, each trace stacked
@@ -215,8 +215,10 @@ def waterfall_overlay(meta_b, t_b=None, sig_b=None, meta_a=None, t_a=None, sig_a
             pk = max(peaks)
             used[m] = (gain_frac * step) / pk if pk > 0 else 1.0
 
-    n = len(muscles); ncol = min(4, n); nrow = int(np.ceil(n / ncol))
-    panel_h = max(3.2, 0.17 * len(amps_all) + 1.4)             # room for every intensity row
+    n = len(muscles); ncol = min(ncol, n); nrow = int(np.ceil(n / ncol))
+    # `row_h` inches per intensity: the default is tight, and two sweeps on one panel need more
+    # vertical room than one or the traces of neighbouring intensities run into each other
+    panel_h = max(3.2, row_h * len(amps_all) + 1.4)
     fig, axes = plt.subplots(nrow, ncol, figsize=(5.0 * ncol, panel_h * nrow), sharex=True,
                              squeeze=False)
     axes = axes.ravel()
