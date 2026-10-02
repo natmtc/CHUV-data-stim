@@ -1225,8 +1225,8 @@ def fig_detection_row(csv, MT, muscles, edge_ms=1.0, jitter_ms=0.5, xlim_ms=None
 # ---------------------------------------------------------------------------
 def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colours=None,
                       hatches=None, min_snr_ratio=None, ylabel="% of control", ref=100,
-                      ylim=None, labels=None, reference=None, err="sd", ax=None, legend=True,
-                      title=None, save=None):
+                      ylim=None, labels=None, reference=None, err="sd", dot_colours=None,
+                      ax=None, legend=True, title=None, save=None):
     """Mean +- SD over participants, per muscle and per series, with every participant's own
     value drawn on top of its bar.
 
@@ -1244,6 +1244,11 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
                quantity everything else is a percentage OF, so the drop is read against something
                rather than against the top of the axis. It carries no error bar because it is
                that value by construction.
+
+    dot_colours : {subject: colour} - give each contributor its own dot colour and list them in
+              the legend, so a point can be traced back to who it came from. Without it every dot
+              takes a darker shade of its bar, which says which series it belongs to but not
+              which participant or panel.
 
     err : "sd" (default) or "sem" - what the error bar shows. Say which in the caption.
 
@@ -1315,9 +1320,10 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
                 # the result. They take a darker shade of the bar so it stays obvious which
                 # series each one belongs to when the bars are close together.
                 for k, (s_, v_) in enumerate(vals[(c, m_)]):
+                    face = (dot_colours or {}).get(s_, _darker(col))
                     ax.plot(xi + (k - (len(vals[(c, m_)]) - 1) / 2) * w * 0.30,
                             min(v_, top) if top is not None else v_, "o", ms=5.5,
-                            mfc=_darker(col), mec="white", mew=0.9, zorder=6)
+                            mfc=face, mec="white", mew=0.9, zorder=6)
         if ref is not None:
             ax.axhline(ref, color="0.35", lw=1.0, ls=(0, (2, 3)), zorder=1)
         if ylim:
@@ -1345,15 +1351,24 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
                          edgecolor="white" if _hatch(hatches, keep, c) else "none")
                    for c in keep]
         names_ = ([reference[0]] if reference else []) + [labels.get(c, c) for c in keep]
-        marks = [Line2D([], [], marker="o", ls="none", ms=5.5, mfc="0.35", mec="white", mew=0.9)]
+        if dot_colours:
+            # one legend entry per contributor, so a dot can be traced back
+            drawn_dots = {a for c_ in keep for m_ in muscles
+                          for a, _ in vals.get((c_, m_), [])}
+            shown_ = [s_ for s_ in dot_colours if s_ in drawn_dots] or list(dot_colours)
+            marks = [Line2D([], [], marker="o", ls="none", ms=5.5, mfc=dot_colours[s_],
+                            mec="white", mew=0.9) for s_ in shown_]
+            names_ = names_ + list(shown_)
+        else:
+            marks = [Line2D([], [], marker="o", ls="none", ms=5.5, mfc="0.35", mec="white",
+                            mew=0.9)]
+            names_ = names_ + ["one participant"]
         if legend and own:
-            fig.legend(handles + marks, names_ + ["one participant"],
-                       loc="upper center", ncol=len(names_) + 1, frameon=False,
-                       bbox_to_anchor=(0.5, 1.02))
+            fig.legend(handles + marks, names_, loc="upper center",
+                       ncol=min(len(names_), 5), frameon=False, bbox_to_anchor=(0.5, 1.02))
         elif legend:
-            ax.legend(handles + marks, names_ + ["one participant"], loc="lower left",
-                      ncol=len(names_) + 1, frameon=False, fontsize=11,
-                      bbox_to_anchor=(0.0, 1.0))
+            ax.legend(handles + marks, names_, loc="lower left", ncol=min(len(names_), 4),
+                      frameon=False, fontsize=11, bbox_to_anchor=(0.0, 1.0))
         if title and own:
             fig.suptitle(title, fontweight="bold", y=1.12)
         elif title:
@@ -1384,7 +1399,7 @@ def fig_group_summary(tab, subjects, muscles, series, key="pct", base=None, colo
 
 def fig_group_panels(tab, subjects, muscles, panels, key="dep_rest", colours=None, hatches=None,
                      min_snr_ratio=None, err="sd", reference=None, labels=None, ylabel="%",
-                     ref=100, ylim=None, quiet=True, title=None, save=None):
+                     ref=100, ylim=None, dot_colours=None, quiet=True, title=None, save=None):
     """Several fig_group_summary panels side by side in ONE figure, sharing a y axis.
 
     panels : {panel title: [conditions in that panel]} - e.g. one panel per protocol, each
@@ -1404,7 +1419,8 @@ def fig_group_panels(tab, subjects, muscles, panels, key="dep_rest", colours=Non
                                              colours=colours, hatches=hatches,
                                              min_snr_ratio=min_snr_ratio, err=err,
                                              reference=reference, labels=labels, ylabel=ylabel,
-                                             ref=ref, ylim=ylim, ax=ax, title=ttl)
+                                             ref=ref, ylim=ylim, dot_colours=dot_colours,
+                                             ax=ax, title=ttl)
             if not quiet:
                 print(buf.getvalue(), end="")
         for ax in axes[1:]:
