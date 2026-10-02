@@ -1006,7 +1006,8 @@ def warn_if_stale(runs, stamp, used=None):
 # 10. the first thing: every chosen threshold, all muscles, one row per participant
 # ---------------------------------------------------------------------------
 def fig_threshold_grid(recordings, muscles, thresholds=None, used=None, used_label="analysed",
-                       pulses=True, xlim=(-20, 130), gain_frac=0.9, title=None, save=None):
+                       pulses=True, share_gain=False, xlim=(-20, 130), gain_frac=0.9,
+                       title=None, save=None):
     """One row per recording, one column per muscle: every intensity stacked, with the threshold
     SAVED FOR THAT RECORDING drawn in orange.
 
@@ -1017,6 +1018,11 @@ def fig_threshold_grid(recordings, muscles, thresholds=None, used=None, used_lab
     recordings : {row label: csv}. Returns {row label: {muscle: mA}} as read from disk.
 
     thresholds : {row label: {muscle: mA}} to draw INSTEAD of what each recording saved.
+
+    share_gain : by default every panel is scaled to its OWN sweep, which makes two rows
+    impossible to compare by eye: a block that reaches higher intensities has a bigger maximum, so
+    everything in it is drawn smaller even where the millivolts are larger. With `share_gain` the
+    rows of a column share one scale, so a trace that looks bigger IS bigger.
 
     pulses : draw a thin vertical line at every stimulus onset, read from the trigger channel.
     Without them a deflection cannot be placed in time and an artifact looks like a response; with
@@ -1034,6 +1040,23 @@ def fig_threshold_grid(recordings, muscles, thresholds=None, used=None, used_lab
     fig, axes = plt.subplots(len(rows), len(muscles), squeeze=False,
                              figsize=(3.3 * len(muscles) + 1.2, 2.9 * len(rows)))
     out = {}
+    # one mV-per-mA scale for a whole column, so rows can be read against each other
+    col_gain = {}
+    if share_gain:
+        for m in muscles:
+            peaks, steps = [], []
+            for lab in rows:
+                meta_, t_, sig_ = load_run(recordings[lab])
+                a_ = np.array([x["amp_ma"] for x in meta_])
+                ch_ = next((x for x in sig_ if x != "Trigger A" and pretty(x) == m), None)
+                if ch_ is None:
+                    continue
+                k_ = (t_ >= xlim[0]) & (t_ <= xlim[1])
+                peaks.append(np.percentile(np.abs(sig_[ch_][:, k_]), 99.5))
+                u_ = np.unique(a_)
+                steps.append(float(np.median(np.diff(u_))) if len(u_) > 1 else 10.0)
+            if peaks:
+                col_gain[m] = (gain_frac * min(steps)) / max(peaks) if max(peaks) > 0 else 1.0
     with plt.rc_context(PAPER_RC):
         for r, lab in enumerate(rows):
             csv = recordings[lab]
@@ -1063,7 +1086,9 @@ def fig_threshold_grid(recordings, muscles, thresholds=None, used=None, used_lab
                 for x0 in onsets:
                     ax.axvline(x0, color="#5A5A5A", lw=0.7, ls=(0, (2, 2)), alpha=0.55, zorder=1)
                 peak = np.percentile(np.abs(sig[ch][:, tmask]), 99.5)
-                gain = (gain_frac * step) / peak if peak > 0 else 1.0
+                gain = col_gain.get(m) if share_gain else None
+                if gain is None:
+                    gain = (gain_frac * step) / peak if peak > 0 else 1.0
                 th_u = (used or {}).get(lab, {}).get(m)
                 for w in range(len(amps)):
                     on = th is not None and amps[w] == th
