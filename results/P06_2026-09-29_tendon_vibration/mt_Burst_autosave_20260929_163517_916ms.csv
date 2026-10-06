@@ -1,5 +1,14 @@
 source_file,muscle,channel,mt_ma,electrode,mode
+Burst_autosave_20260929_163517_916ms,Biceps (L),L_BB,31.0,2,monophasic
+Burst_autosave_20260929_163517_916ms,Triceps long (L),L_TBlg,,2,monophasic
+Burst_autosave_20260929_163517_916ms,Thenar (L),L_The_ED_FD_FCR A,43.0,2,monophasic
 Burst_autosave_20260929_163517_916ms,Ext. digitorum (L),L_The_ED_FD_FCR B,43.0,2,monophasic
 Burst_autosave_20260929_163517_916ms,Flex. digitorum (L),L_The_ED_FD_FCR C,46.0,2,monophasic
+Burst_autosave_20260929_163517_916ms,Flex. carpi rad. (L),L_The_ED_FD_FCR D,34.0,2,monophasic
+Burst_autosave_20260929_163517_916ms,Biceps (R),R_BB,43.0,2,monophasic
+Burst_autosave_20260929_163517_916ms,Triceps long (R),R_TBlg,,2,monophasic
+Burst_autosave_20260929_163517_916ms,Trapezius (R),R_TR,,2,monophasic
+Burst_autosave_20260929_163517_916ms,Thenar (R),R_The_ED_FD_FCR A,,2,monophasic
+Burst_autosave_20260929_163517_916ms,Ext. digitorum (R),R_The_ED_FD_FCR B,46.0,2,monophasic
 Burst_autosave_20260929_163517_916ms,Flex. digitorum (R),R_The_ED_FD_FCR C,40.0,2,monophasic
 Burst_autosave_20260929_163517_916ms,Flex. carpi rad. (R),R_The_ED_FD_FCR D,31.0,2,monophasic

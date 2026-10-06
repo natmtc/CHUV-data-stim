@@ -1648,3 +1648,86 @@ def latency_table(runs, MT, muscles, conditions, k_sd=3.0, min_run=2, pre=(-95.0
                             snr=(float(np.asarray(r["p2p"][ch][w], float)[0]) / (sd * 2)
                                  if sd > 0 else np.nan))
     return out
+
+
+def fig_latency_example(csv, muscle, amp, k_sd=3.0, min_run=2, pre=(-95.0, -5.0),
+                        xlim_ms=None, title=None, save=None, **kw):
+    """One recording, one muscle: the ten pulses re-aligned, with everything the latency is read
+    from drawn on top.
+
+    Shows, rather than asserts, where the two numbers come from:
+      grey band    the baseline mean +- `k_sd` standard deviations of the pre-stimulus stretch.
+                   The onset is the first moment a trace leaves this band and stays out for
+                   `min_run` samples - so a wide band (a noisy baseline) pushes the onset later.
+      green lines  each pulse's own onset, and the thick one their mean
+      v / ^        the max and min the peak-to-peak is made of
+      orange line  the mean of those two per pulse: the peak latency
+    """
+    from .burst import burst_p2p
+    from .io import load_run
+    meta, t, sig = load_run(csv)
+    chans = [c for c in sig if c != "Trigger A"]
+    ch = next((c for c in chans if pretty(c) == muscle), None)
+    res = burst_p2p(meta, t, sig, chans, **{**kw, "min_snr": None, "max_edge_frac": None})
+    amps = list(res["amps"])
+    if ch is None or amp not in amps:
+        print(f"{muscle} at {amp} mA: not in this recording"); return
+    w = amps.index(amp)
+    onset, ipi = res["pulse_ms"], res["ipi_ms"]
+    base = sig[ch][w][(t >= pre[0]) & (t <= pre[1])]
+    mu, sd = float(np.nanmean(base)), float(np.nanstd(base))
+    a_rel, b_rel = np.array(res["wins"][ch][0]) - onset[0]
+    hi = xlim_ms or (b_rel + 2)
+    cmap = plt.get_cmap("viridis")
+
+    ons, pks = [], []
+    with plt.rc_context(PAPER_RC):
+        fig, ax = plt.subplots(figsize=(8.4, 5.0))
+        ax.axhspan(mu - k_sd * sd, mu + k_sd * sd, color="0.55", alpha=0.18, zorder=0)
+        ax.axvspan(0, a_rel, color="#C0392B", alpha=0.07, zorder=0)
+        for k in range(len(onset)):
+            seg = (t >= onset[k] - 2) & (t <= onset[k] + ipi)
+            ax.plot(t[seg] - onset[k], sig[ch][w][seg], lw=0.9, alpha=0.75,
+                    color=cmap(k / max(len(onset) - 1, 1)), zorder=2)
+            win = (t >= onset[k] + a_rel) & (t <= onset[k] + b_rel)
+            x, tt = sig[ch][w][win], t[win] - onset[k]
+            if not len(x):
+                continue
+            over = np.abs(x - mu) > k_sd * sd
+            for i in range(len(over) - min_run + 1):
+                if over[i:i + min_run].all():
+                    ons.append(float(tt[i]))
+                    ax.axvline(tt[i], color="#2ca25f", lw=0.8, alpha=0.5, zorder=3)
+                    break
+            i_hi, i_lo = int(np.nanargmax(x)), int(np.nanargmin(x))
+            pks.append(float((tt[i_hi] + tt[i_lo]) / 2))
+            ax.plot([tt[i_hi]], [x[i_hi]], "v", ms=6, color="#333", mec="white", mew=0.7, zorder=5)
+            ax.plot([tt[i_lo]], [x[i_lo]], "^", ms=6, color="#333", mec="white", mew=0.7, zorder=5)
+        if ons:
+            ax.axvline(float(np.mean(ons)), color="#2ca25f", lw=2.6, zorder=6)
+        if pks:
+            ax.axvline(float(np.mean(pks)), color="#E67E22", lw=2.6, zorder=6)
+        ax.axvline(0, color="#C0392B", lw=1.2, alpha=0.8, zorder=1)
+        ax.set_xlim(-2, hi)
+        ax.set_xlabel("ms from pulse onset", color="0.25")
+        ax.set_ylabel("EMG (mV)", color="0.25")
+        ax.tick_params(colors="0.25")
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        from matplotlib.lines import Line2D
+        from matplotlib.patches import Patch
+        ax.legend([Patch(facecolor="0.55", alpha=0.18),
+                   Line2D([], [], color="#2ca25f", lw=2.6),
+                   Line2D([], [], color="#E67E22", lw=2.6),
+                   Patch(facecolor="#C0392B", alpha=0.07)],
+                  [f"baseline ± {k_sd:g} SD", f"onset  {np.mean(ons):.1f} ms" if ons else "onset —",
+                   f"peak  {np.mean(pks):.1f} ms" if pks else "peak —", "artifact, not searched"],
+                  loc="lower left", bbox_to_anchor=(0.0, 1.0), ncol=2, frameon=False, fontsize=11)
+        fig.suptitle(title or f"{muscle} · {amp:g} mA", fontweight="bold", y=1.13)
+        fig.tight_layout()
+        if save:
+            import os
+            os.makedirs(os.path.dirname(save), exist_ok=True)
+            fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
+        plt.show()
+    return (float(np.mean(ons)) if ons else np.nan, float(np.mean(pks)) if pks else np.nan)
