@@ -1558,3 +1558,93 @@ def fig_noise_check(csv, muscle, amp, pre=(-95.0, -5.0), title=None, save=None, 
             fig.savefig(save, dpi=300, bbox_inches="tight"); print("saved", save)
         plt.show()
     return p2p_r, p2p_b
+
+
+# ---------------------------------------------------------------------------
+# 14. when the response starts, and when it peaks
+# ---------------------------------------------------------------------------
+def latency_table(runs, MT, muscles, conditions, k_sd=3.0, min_run=2, pre=(-95.0, -5.0),
+                  match="common", group=None, **kw):
+    """Per panel, condition and muscle: when the response begins and when it peaks, in ms after
+    the pulse that evoked it.
+
+    Two numbers, because they answer different questions and fail in different ways:
+
+      onset_ms  the first moment the EMG leaves its own baseline - `k_sd` standard deviations of
+                the pre-stimulus stretch, held for `min_run` samples. This is the conduction
+                question: a longer onset means a longer path, or an extra synapse. It is the more
+                fragile of the two, since a noisy baseline raises the bar it has to cross.
+      peak_ms   the midpoint between the max and the min the peak-to-peak is made of. Far more
+                stable, but it moves with the SHAPE of the response as well as its timing, so a
+                response that merely grows can shift it.
+
+    Both are averaged over the pulses of the train, and `jitter_ms` reports how much they vary
+    from pulse to pulse - a latency that wanders is not a latency.
+
+    Sampling is around 0.8 ms in these recordings, so differences under ~1.5 ms are not resolvable
+    and should not be read.
+
+    Returns {(panel, condition, muscle): {...}}, shaped like condition_table so the same figures
+    can draw it.
+    """
+    from .burst import burst_p2p
+    from .io import load_run
+    kw2 = {k: v for k, v in kw.items() if k not in ("min_snr", "max_edge_frac")}
+    grp_of = group or {c: "" for c in conditions}
+    res_of, amps_of, chans_of, raw_of = {}, {}, {}, {}
+    for (s, cond), csv in runs.items():
+        meta, t, sig = load_run(csv)
+        chans = [c for c in sig if c != "Trigger A"]
+        r = burst_p2p(meta, t, sig, chans, min_snr=None, max_edge_frac=None, **kw2)
+        res_of[(s, cond)], amps_of[(s, cond)] = r, list(r["amps"])
+        chans_of[(s, cond)], raw_of[(s, cond)] = chans, (t, sig)
+
+    out = {}
+    for s in sorted({a for a, _ in runs}):
+        for g in dict.fromkeys(grp_of.get(c, "") for c in conditions):
+            blocks = [(s, c) for c in conditions if grp_of.get(c, "") == g and (s, c) in runs]
+            if not blocks:
+                continue
+            shared = set.intersection(*(set(amps_of[b]) for b in blocks))
+            for m in muscles:
+                th = (MT.get((s, g)) or MT.get(s) or {}).get(m)
+                if not th:
+                    continue
+                use = th if (match == "exact" and all(th in amps_of[b] for b in blocks)) else \
+                    next((a for a in sorted(shared) if a >= th), None)
+                if use is None:
+                    continue
+                for _, cond in blocks:
+                    r, (t, sig) = res_of[(s, cond)], raw_of[(s, cond)]
+                    ch = next((c for c in chans_of[(s, cond)] if pretty(c) == m), None)
+                    if ch is None or use not in amps_of[(s, cond)]:
+                        continue
+                    w = amps_of[(s, cond)].index(use)
+                    onset, ipi = r["pulse_ms"], r["ipi_ms"]
+                    base = sig[ch][w][(t >= pre[0]) & (t <= pre[1])]
+                    mu, sd = float(np.nanmean(base)), float(np.nanstd(base))
+                    a_rel, b_rel = np.array(r["wins"][ch][0]) - onset[0]
+                    ons, pks = [], []
+                    for k in range(len(onset)):
+                        seg = (t >= onset[k] + a_rel) & (t <= onset[k] + b_rel)
+                        x, tt = sig[ch][w][seg], t[seg] - onset[k]
+                        if not len(x):
+                            continue
+                        over = np.abs(x - mu) > k_sd * sd
+                        hit = None
+                        for i in range(len(over) - min_run + 1):
+                            if over[i:i + min_run].all():
+                                hit = tt[i]; break
+                        if hit is not None:
+                            ons.append(float(hit))
+                        pks.append(float((tt[int(np.nanargmax(x))] + tt[int(np.nanargmin(x))]) / 2))
+                    with np.errstate(invalid="ignore"):
+                        out[(s, cond, m)] = dict(
+                            amp=use,
+                            onset_ms=float(np.mean(ons)) if ons else np.nan,
+                            peak_ms=float(np.mean(pks)) if pks else np.nan,
+                            jitter_ms=float(np.std(pks)) if len(pks) > 1 else np.nan,
+                            n_onset=len(ons), n_pulses=len(pks),
+                            snr=(float(np.asarray(r["p2p"][ch][w], float)[0]) / (sd * 2)
+                                 if sd > 0 else np.nan))
+    return out
